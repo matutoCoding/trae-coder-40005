@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Plus, Save, X, Shuffle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Save, X, Shuffle, Info } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button } from '@/components/FormField';
 import { useAppStore } from '@/store';
-import { generateId, generateBatchNo, formatDate } from '@/utils';
-import type { BlendingRecord } from '@/types';
+import { generateId, formatDate } from '@/utils';
+import type { BlendingRecord, PowderMixRecord } from '@/types';
 
 const lubricantOptions = [
   { value: '硬脂酸锌', label: '硬脂酸锌' },
@@ -21,9 +22,10 @@ const granulationSizeOptions = [
 ];
 
 export default function Blending() {
-  const { blendingRecords, addBlending } = useAppStore();
+  const { blendingRecords, addBlending, getAvailableBatches } = useAppStore();
   const [showForm, setShowForm] = useState(false);
-  const [batchId, setBatchId] = useState(generateBatchNo());
+  const [selectedBatch, setSelectedBatch] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [productName, setProductName] = useState('');
   const [lubricantType, setLubricantType] = useState('硬脂酸锌');
   const [lubricantWeight, setLubricantWeight] = useState(500);
@@ -33,9 +35,43 @@ export default function Blending() {
   const [granulationYield, setGranulationYield] = useState(92);
   const [operator, setOperator] = useState('');
 
+  const availableBatches = getAvailableBatches('blending') as { batchId: string; productName: string; prevRecord: PowderMixRecord }[];
+
+  const resetForm = () => {
+    setSelectedBatch('');
+    setBatchId('');
+    setProductName('');
+    setLubricantType('硬脂酸锌');
+    setLubricantWeight(500);
+    setMixingSpeed(35);
+    setMixingTime(45);
+    setGranulationSize('60目');
+    setGranulationYield(92);
+    setOperator('');
+  };
+
+  const handleBatchChange = (batchIdVal: string) => {
+    setSelectedBatch(batchIdVal);
+    if (batchIdVal) {
+      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      if (batch) {
+        setBatchId(batchIdVal);
+        setProductName(batch.productName);
+        if (batch.prevRecord) {
+          setLubricantType(batch.prevRecord.lubricant);
+          setLubricantWeight(batch.prevRecord.lubricantWeight);
+          setMixingTime(batch.prevRecord.mixingTime || 45);
+        }
+      }
+    } else {
+      setBatchId('');
+      setProductName('');
+    }
+  };
+
   const handleSubmit = () => {
-    if (!productName || !operator) {
-      alert('请填写产品名称和操作员');
+    if (!batchId || !operator) {
+      alert('请选择批次和操作员');
       return;
     }
 
@@ -55,13 +91,7 @@ export default function Blending() {
 
     addBlending(record);
     setShowForm(false);
-    setBatchId(generateBatchNo());
-    setProductName('');
-    setLubricantWeight(500);
-    setMixingSpeed(35);
-    setMixingTime(45);
-    setGranulationYield(92);
-    setOperator('');
+    resetForm();
   };
 
   return (
@@ -84,18 +114,32 @@ export default function Blending() {
           >
             {showForm ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="批次号" required>
-                    <Input value={batchId} readOnly className="bg-slate-50" />
-                  </FormField>
-                  <FormField label="产品名称" required>
-                    <Input
-                      placeholder="请输入产品名称"
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                    />
-                  </FormField>
-                </div>
+                <FormField label="选择批次" required>
+                  <Select
+                    value={selectedBatch}
+                    onChange={(e) => handleBatchChange(e.target.value)}
+                    options={[
+                      { value: '', label: '请选择配料批次' },
+                      ...availableBatches.map((b) => ({
+                        value: b.batchId,
+                        label: `${b.batchId} - ${b.productName}`,
+                      })),
+                    ]}
+                  />
+                </FormField>
+
+                {selectedBatch && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-2 text-blue-700 text-xs font-medium mb-2">
+                      <Info size={14} />
+                      上道工序信息（粉末配料）
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
+                      <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="润滑剂类型">
@@ -190,7 +234,11 @@ export default function Blending() {
                 <tbody>
                   {blendingRecords.map((record) => (
                     <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-mono text-xs text-blue-600">{record.batchId}</td>
+                      <td className="py-3 px-3">
+                        <Link to={`/batch/${record.batchId}`} className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                          {record.batchId}
+                        </Link>
+                      </td>
                       <td className="py-3 px-3 font-medium text-slate-800">{record.productName}</td>
                       <td className="py-3 px-3 text-slate-600">
                         {record.lubricantType} ({record.lubricantWeight}g)

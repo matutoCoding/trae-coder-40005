@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -9,12 +10,12 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { Plus, Play, Square, Flame, Thermometer, Wind, Droplets, Clock } from 'lucide-react';
+import { Plus, Play, Square, Flame, Thermometer, Wind, Droplets, Clock, Info } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button, StatusBadge } from '@/components/FormField';
 import { useAppStore } from '@/store';
-import { generateId, generateBatchNo, generateFurnaceNo, formatDate } from '@/utils';
-import type { SinteringRecord, TempPoint } from '@/types';
+import { generateId, generateFurnaceNo, formatDate } from '@/utils';
+import type { SinteringRecord, TempPoint, PressingRecord } from '@/types';
 
 const furnaceOptions = [
   { value: 'F01', label: '1号烧结炉 (F01)' },
@@ -49,12 +50,13 @@ function generateDefaultTempCurve(): TempPoint[] {
 }
 
 export default function Sintering() {
-  const { sinteringRecords, addSintering } = useAppStore();
+  const { sinteringRecords, addSintering, getAvailableBatches } = useAppStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     sinteringRecords.length > 0 ? sinteringRecords[0].id : null
   );
-  const [batchId, setBatchId] = useState(generateBatchNo());
+  const [selectedBatch, setSelectedBatch] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [productName, setProductName] = useState('');
   const [furnaceId, setFurnaceId] = useState('F01');
   const [atmosphereType, setAtmosphereType] = useState('氨分解气氛');
@@ -64,14 +66,43 @@ export default function Sintering() {
   const [sinteringTime, setSinteringTime] = useState(120);
   const [operator, setOperator] = useState('');
 
+  const availableBatches = getAvailableBatches('sintering') as { batchId: string; productName: string; prevRecord: PressingRecord }[];
+
   const selectedRecord = sinteringRecords.find((r) => r.id === selectedId);
 
   const activeCount = sinteringRecords.filter((r) => r.status === 'sintering').length;
   const completedCount = sinteringRecords.filter((r) => r.status === 'completed').length;
 
+  const resetForm = () => {
+    setSelectedBatch('');
+    setBatchId('');
+    setProductName('');
+    setFurnaceId('F01');
+    setAtmosphereType('氨分解气氛');
+    setAtmosphereFlow(15);
+    setDewPoint(-40);
+    setMaxTemperature(1120);
+    setSinteringTime(120);
+    setOperator('');
+  };
+
+  const handleBatchChange = (batchIdVal: string) => {
+    setSelectedBatch(batchIdVal);
+    if (batchIdVal) {
+      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      if (batch) {
+        setBatchId(batchIdVal);
+        setProductName(batch.productName);
+      }
+    } else {
+      setBatchId('');
+      setProductName('');
+    }
+  };
+
   const handleSubmit = () => {
-    if (!productName || !operator) {
-      alert('请填写产品名称和操作员');
+    if (!batchId || !operator) {
+      alert('请选择批次和操作员');
       return;
     }
 
@@ -97,9 +128,7 @@ export default function Sintering() {
     addSintering(record);
     setShowForm(false);
     setSelectedId(record.id);
-    setBatchId(generateBatchNo());
-    setProductName('');
-    setOperator('');
+    resetForm();
   };
 
   const getStatusBadge = (status: string) => {
@@ -228,72 +257,93 @@ export default function Sintering() {
             {showForm && (
               <div className="mt-6 pt-6 border-t border-slate-200">
                 <h4 className="font-semibold text-slate-800 mb-4">新开烧结炉次</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  <FormField label="批次号">
-                    <Input value={batchId} readOnly className="bg-slate-50" />
-                  </FormField>
-                  <FormField label="产品名称" required>
-                    <Input
-                      placeholder="产品名称"
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                    />
-                  </FormField>
-                  <FormField label="烧结炉">
+                <div className="space-y-4">
+                  <FormField label="选择批次" required>
                     <Select
-                      value={furnaceId}
-                      onChange={(e) => setFurnaceId(e.target.value)}
-                      options={furnaceOptions}
+                      value={selectedBatch}
+                      onChange={(e) => handleBatchChange(e.target.value)}
+                      options={[
+                        { value: '', label: '请选择压制成型批次' },
+                        ...availableBatches.map((b) => ({
+                          value: b.batchId,
+                          label: `${b.batchId} - ${b.productName}`,
+                        })),
+                      ]}
                     />
                   </FormField>
-                  <FormField label="保护气氛">
-                    <Select
-                      value={atmosphereType}
-                      onChange={(e) => setAtmosphereType(e.target.value)}
-                      options={atmosphereOptions}
-                    />
-                  </FormField>
-                  <FormField label="气氛流量 (m³/h)">
-                    <Input
-                      type="number"
-                      value={atmosphereFlow}
-                      onChange={(e) => setAtmosphereFlow(parseFloat(e.target.value) || 0)}
-                    />
-                  </FormField>
-                  <FormField label="露点 (°C)">
-                    <Input
-                      type="number"
-                      value={dewPoint}
-                      onChange={(e) => setDewPoint(parseFloat(e.target.value) || 0)}
-                    />
-                  </FormField>
-                  <FormField label="最高温度 (°C)">
-                    <Input
-                      type="number"
-                      value={maxTemperature}
-                      onChange={(e) => setMaxTemperature(parseInt(e.target.value) || 0)}
-                    />
-                  </FormField>
-                  <FormField label="保温时间 (分钟)">
-                    <Input
-                      type="number"
-                      value={sinteringTime}
-                      onChange={(e) => setSinteringTime(parseInt(e.target.value) || 0)}
-                    />
-                  </FormField>
-                  <FormField label="操作员" required>
-                    <Input
-                      placeholder="操作员"
-                      value={operator}
-                      onChange={(e) => setOperator(e.target.value)}
-                    />
-                  </FormField>
-                </div>
-                <div className="mt-4 flex justify-end">
-                  <Button onClick={handleSubmit}>
-                    <Play size={14} className="mr-2" />
-                    开始烧结
-                  </Button>
+
+                  {selectedBatch && (
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                      <div className="flex items-center gap-2 text-blue-700 text-xs font-medium mb-2">
+                        <Info size={14} />
+                        上道工序信息（压制成型）
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-slate-600">
+                        <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
+                        <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
+                        <div>压坯密度: <span className="font-medium text-slate-800">{availableBatches.find(b => b.batchId === selectedBatch)?.prevRecord?.greenDensity || '-'} g/cm³</span></div>
+                        <div>压坯重量: <span className="font-medium text-slate-800">{availableBatches.find(b => b.batchId === selectedBatch)?.prevRecord?.greenWeight || '-'} g</span></div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <FormField label="烧结炉">
+                      <Select
+                        value={furnaceId}
+                        onChange={(e) => setFurnaceId(e.target.value)}
+                        options={furnaceOptions}
+                      />
+                    </FormField>
+                    <FormField label="保护气氛">
+                      <Select
+                        value={atmosphereType}
+                        onChange={(e) => setAtmosphereType(e.target.value)}
+                        options={atmosphereOptions}
+                      />
+                    </FormField>
+                    <FormField label="气氛流量 (m³/h)">
+                      <Input
+                        type="number"
+                        value={atmosphereFlow}
+                        onChange={(e) => setAtmosphereFlow(parseFloat(e.target.value) || 0)}
+                      />
+                    </FormField>
+                    <FormField label="露点 (°C)">
+                      <Input
+                        type="number"
+                        value={dewPoint}
+                        onChange={(e) => setDewPoint(parseFloat(e.target.value) || 0)}
+                      />
+                    </FormField>
+                    <FormField label="最高温度 (°C)">
+                      <Input
+                        type="number"
+                        value={maxTemperature}
+                        onChange={(e) => setMaxTemperature(parseInt(e.target.value) || 0)}
+                      />
+                    </FormField>
+                    <FormField label="保温时间 (分钟)">
+                      <Input
+                        type="number"
+                        value={sinteringTime}
+                        onChange={(e) => setSinteringTime(parseInt(e.target.value) || 0)}
+                      />
+                    </FormField>
+                    <FormField label="操作员" required>
+                      <Input
+                        placeholder="操作员"
+                        value={operator}
+                        onChange={(e) => setOperator(e.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <Button onClick={handleSubmit}>
+                      <Play size={14} className="mr-2" />
+                      开始烧结
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -359,6 +409,13 @@ export default function Sintering() {
                     {getStatusBadge(record.status)}
                   </div>
                   <p className="text-sm font-medium text-slate-800">{record.productName}</p>
+                  <Link
+                    to={`/batch/${record.batchId}`}
+                    className="text-xs font-mono text-blue-600 hover:text-blue-800 hover:underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {record.batchId}
+                  </Link>
                   <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
                     <span>炉号: {record.furnaceId}</span>
                     <span>{record.maxTemperature}°C</span>

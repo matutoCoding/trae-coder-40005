@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Plus, Save, X, Gauge } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Save, X, Gauge, Info } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button } from '@/components/FormField';
 import { useAppStore } from '@/store';
-import { generateId, generateBatchNo, formatDate } from '@/utils';
-import type { PressingRecord } from '@/types';
+import { generateId, formatDate } from '@/utils';
+import type { PressingRecord, BlendingRecord } from '@/types';
 
 const pressOptions = [
   { value: '100T液压机', label: '100T液压机' },
@@ -15,9 +16,10 @@ const pressOptions = [
 ];
 
 export default function Pressing() {
-  const { pressingRecords, addPressing } = useAppStore();
+  const { pressingRecords, addPressing, getAvailableBatches } = useAppStore();
   const [showForm, setShowForm] = useState(false);
-  const [batchId, setBatchId] = useState(generateBatchNo());
+  const [selectedBatch, setSelectedBatch] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [productName, setProductName] = useState('');
   const [pressModel, setPressModel] = useState('315T液压机');
   const [pressingPressure, setPressingPressure] = useState(315);
@@ -28,9 +30,42 @@ export default function Pressing() {
   const [pressedQty, setPressedQty] = useState(380);
   const [operator, setOperator] = useState('');
 
+  const availableBatches = getAvailableBatches('pressing') as { batchId: string; productName: string; prevRecord: BlendingRecord }[];
+
+  const resetForm = () => {
+    setSelectedBatch('');
+    setBatchId('');
+    setProductName('');
+    setPressModel('315T液压机');
+    setPressingPressure(315);
+    setPressingSpeed(12);
+    setGreenDensity(6.8);
+    setGreenWeight(125.5);
+    setGreenHeight(20.5);
+    setPressedQty(380);
+    setOperator('');
+  };
+
+  const handleBatchChange = (batchIdVal: string) => {
+    setSelectedBatch(batchIdVal);
+    if (batchIdVal) {
+      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      if (batch) {
+        setBatchId(batchIdVal);
+        setProductName(batch.productName);
+        if (batch.prevRecord) {
+          setPressingSpeed(batch.prevRecord.mixingSpeed || 12);
+        }
+      }
+    } else {
+      setBatchId('');
+      setProductName('');
+    }
+  };
+
   const handleSubmit = () => {
-    if (!productName || !operator) {
-      alert('请填写产品名称和操作员');
+    if (!batchId || !operator) {
+      alert('请选择批次和操作员');
       return;
     }
 
@@ -51,15 +86,7 @@ export default function Pressing() {
 
     addPressing(record);
     setShowForm(false);
-    setBatchId(generateBatchNo());
-    setProductName('');
-    setPressingPressure(315);
-    setPressingSpeed(12);
-    setGreenDensity(6.8);
-    setGreenWeight(125.5);
-    setGreenHeight(20.5);
-    setPressedQty(380);
-    setOperator('');
+    resetForm();
   };
 
   const avgPressure = pressingRecords.length > 0
@@ -113,18 +140,32 @@ export default function Pressing() {
           >
             {showForm ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="批次号" required>
-                    <Input value={batchId} readOnly className="bg-slate-50" />
-                  </FormField>
-                  <FormField label="产品名称" required>
-                    <Input
-                      placeholder="请输入产品名称"
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                    />
-                  </FormField>
-                </div>
+                <FormField label="选择批次" required>
+                  <Select
+                    value={selectedBatch}
+                    onChange={(e) => handleBatchChange(e.target.value)}
+                    options={[
+                      { value: '', label: '请选择混料批次' },
+                      ...availableBatches.map((b) => ({
+                        value: b.batchId,
+                        label: `${b.batchId} - ${b.productName}`,
+                      })),
+                    ]}
+                  />
+                </FormField>
+
+                {selectedBatch && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-2 text-blue-700 text-xs font-medium mb-2">
+                      <Info size={14} />
+                      上道工序信息（混料制粒）
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
+                      <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="压机型号">
@@ -231,7 +272,11 @@ export default function Pressing() {
                 <tbody>
                   {pressingRecords.map((record) => (
                     <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-mono text-xs text-blue-600">{record.batchId}</td>
+                      <td className="py-3 px-3">
+                        <Link to={`/batch/${record.batchId}`} className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                          {record.batchId}
+                        </Link>
+                      </td>
                       <td className="py-3 px-3 font-medium text-slate-800">{record.productName}</td>
                       <td className="py-3 px-3 text-slate-600">{record.pressModel}</td>
                       <td className="py-3 px-3 text-right font-medium text-slate-700">{record.pressingPressure} T</td>

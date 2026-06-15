@@ -9,6 +9,7 @@ import Sizing from '@/pages/Sizing';
 import Impregnation from '@/pages/Impregnation';
 import Inspection from '@/pages/Inspection';
 import FurnaceLedger from '@/pages/FurnaceLedger';
+import BatchHistory from '@/pages/BatchHistory';
 
 export default function App() {
   return (
@@ -24,6 +25,7 @@ export default function App() {
           <Route path="/impregnation" element={<Impregnation />} />
           <Route path="/inspection" element={<Inspection />} />
           <Route path="/furnace-ledger" element={<FurnaceLedger />} />
+          <Route path="/batch/:batchId" element={<BatchHistory />} />
         </Route>
       </Routes>
     </Router>

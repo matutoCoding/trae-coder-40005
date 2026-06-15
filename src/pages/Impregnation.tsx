@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Plus, Save, X, Droplet, Thermometer, Wind } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Plus, Save, X, Droplet, Thermometer, Wind, Info } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button } from '@/components/FormField';
 import { useAppStore } from '@/store';
-import { generateId, generateBatchNo, formatDate, calculateOilContentRate } from '@/utils';
-import type { ImpregnationRecord } from '@/types';
+import { generateId, formatDate, calculateOilContentRate } from '@/utils';
+import type { ImpregnationRecord, SizingRecord } from '@/types';
 
 const oilOptions = [
   { value: '32号机械油', label: '32号机械油' },
@@ -15,9 +16,10 @@ const oilOptions = [
 ];
 
 export default function Impregnation() {
-  const { impregnationRecords, addImpregnation } = useAppStore();
+  const { impregnationRecords, addImpregnation, getAvailableBatches } = useAppStore();
   const [showForm, setShowForm] = useState(false);
-  const [batchId, setBatchId] = useState(generateBatchNo());
+  const [selectedBatch, setSelectedBatch] = useState('');
+  const [batchId, setBatchId] = useState('');
   const [productName, setProductName] = useState('');
   const [oilType, setOilType] = useState('32号机械油');
   const [oilTemperature, setOilTemperature] = useState(80);
@@ -28,13 +30,47 @@ export default function Impregnation() {
   const [processedQty, setProcessedQty] = useState(370);
   const [operator, setOperator] = useState('');
 
-  const oilContentRate = calculateOilContentRate(beforeWeight, afterWeight);
+  const availableBatches = getAvailableBatches('impregnation') as { batchId: string; productName: string; prevRecord: SizingRecord }[];
+
+  const resetForm = () => {
+    setSelectedBatch('');
+    setBatchId('');
+    setProductName('');
+    setOilType('32号机械油');
+    setOilTemperature(80);
+    setVacuumPressure(-0.095);
+    setImpregnationTime(30);
+    setBeforeWeight(120.5);
+    setAfterWeight(142.8);
+    setProcessedQty(370);
+    setOperator('');
+  };
+
+  const handleBatchChange = (batchIdVal: string) => {
+    setSelectedBatch(batchIdVal);
+    if (batchIdVal) {
+      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      if (batch) {
+        setBatchId(batchIdVal);
+        setProductName(batch.productName);
+        if (batch.prevRecord) {
+          setProcessedQty(batch.prevRecord.sizingQty || 370);
+          setBeforeWeight(batch.prevRecord.afterSizingSize ? 120.5 : 120.5);
+        }
+      }
+    } else {
+      setBatchId('');
+      setProductName('');
+    }
+  };
 
   const handleSubmit = () => {
-    if (!productName || !operator) {
-      alert('请填写产品名称和操作员');
+    if (!batchId || !operator) {
+      alert('请选择批次和操作员');
       return;
     }
+
+    const oilContentRate = calculateOilContentRate(beforeWeight, afterWeight);
 
     const record: ImpregnationRecord = {
       id: generateId(),
@@ -54,15 +90,7 @@ export default function Impregnation() {
 
     addImpregnation(record);
     setShowForm(false);
-    setBatchId(generateBatchNo());
-    setProductName('');
-    setOilTemperature(80);
-    setVacuumPressure(-0.095);
-    setImpregnationTime(30);
-    setBeforeWeight(120.5);
-    setAfterWeight(142.8);
-    setProcessedQty(370);
-    setOperator('');
+    resetForm();
   };
 
   const totalProcessed = impregnationRecords.reduce((sum, r) => sum + r.processedQty, 0);
@@ -137,18 +165,32 @@ export default function Impregnation() {
           >
             {showForm ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <FormField label="批次号" required>
-                    <Input value={batchId} readOnly className="bg-slate-50" />
-                  </FormField>
-                  <FormField label="产品名称" required>
-                    <Input
-                      placeholder="请输入产品名称"
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                    />
-                  </FormField>
-                </div>
+                <FormField label="选择批次" required>
+                  <Select
+                    value={selectedBatch}
+                    onChange={(e) => handleBatchChange(e.target.value)}
+                    options={[
+                      { value: '', label: '请选择复压整形批次' },
+                      ...availableBatches.map((b) => ({
+                        value: b.batchId,
+                        label: `${b.batchId} - ${b.productName}`,
+                      })),
+                    ]}
+                  />
+                </FormField>
+
+                {selectedBatch && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-2 text-blue-700 text-xs font-medium mb-2">
+                      <Info size={14} />
+                      上道工序信息（复压整形）
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
+                      <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
+                      <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <FormField label="油品类型">
@@ -207,7 +249,7 @@ export default function Impregnation() {
                   </div>
                   <div className="mt-2 text-center">
                     <span className="text-xs text-slate-500">含油率: </span>
-                    <span className="text-lg font-bold text-cyan-600">{oilContentRate}%</span>
+                    <span className="text-lg font-bold text-cyan-600">{calculateOilContentRate(beforeWeight, afterWeight)}%</span>
                   </div>
                 </div>
 
@@ -263,7 +305,11 @@ export default function Impregnation() {
                 <tbody>
                   {impregnationRecords.map((record) => (
                     <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-mono text-xs text-blue-600">{record.batchId}</td>
+                      <td className="py-3 px-3">
+                        <Link to={`/batch/${record.batchId}`} className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                          {record.batchId}
+                        </Link>
+                      </td>
                       <td className="py-3 px-3 font-medium text-slate-800">{record.productName}</td>
                       <td className="py-3 px-3 text-slate-600">{record.oilType}</td>
                       <td className="py-3 px-3 text-right text-slate-700">{record.oilTemperature}°C</td>

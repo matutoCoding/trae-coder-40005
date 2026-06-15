@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Trash2, Save, X, Beaker } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button } from '@/components/FormField';
@@ -31,6 +32,8 @@ export default function PowderMix() {
   const [productName, setProductName] = useState('');
   const [formula, setFormula] = useState<PowderFormula[]>([
     { name: '铁粉', percentage: 95, weight: 47500 },
+    { name: '铜粉', percentage: 2, weight: 1000 },
+    { name: '石墨粉', percentage: 3, weight: 1500 },
   ]);
   const [lubricant, setLubricant] = useState('硬脂酸锌');
   const [lubricantWeight, setLubricantWeight] = useState(500);
@@ -38,35 +41,51 @@ export default function PowderMix() {
   const [mixingTime, setMixingTime] = useState(45);
 
   const totalWeight = formula.reduce((sum, f) => sum + f.weight, 0);
+  const totalPercentage = formula.reduce((sum, f) => sum + f.percentage, 0);
+
+  const recalcPercentages = (formulaList: PowderFormula[]): PowderFormula[] => {
+    const total = formulaList.reduce((sum, f) => sum + f.weight, 0);
+    return formulaList.map((f) => ({
+      ...f,
+      percentage: total > 0 ? parseFloat(((f.weight / total) * 100).toFixed(2)) : 0,
+    }));
+  };
 
   const addPowder = () => {
-    setFormula([
+    const newFormula = [
       ...formula,
-      { name: '铜粉', percentage: 2, weight: 1000 },
-    ]);
+      { name: '铜粉', percentage: 0, weight: 1000 },
+    ];
+    setFormula(recalcPercentages(newFormula));
   };
 
   const removePowder = (index: number) => {
     if (formula.length > 1) {
-      setFormula(formula.filter((_, i) => i !== index));
+      const newFormula = formula.filter((_, i) => i !== index);
+      setFormula(recalcPercentages(newFormula));
     }
   };
 
   const updatePowder = (index: number, field: keyof PowderFormula, value: string | number) => {
     const newFormula = [...formula];
     newFormula[index] = { ...newFormula[index], [field]: value };
-    if (field === 'weight' && totalWeight > 0) {
-      newFormula[index].percentage = parseFloat(
-        ((Number(value) / (totalWeight + Number(value) - newFormula[index].weight)) * 100).toFixed(2)
-      );
-    }
-    if (field === 'percentage') {
-      const totalPct = formula.reduce((sum, f, i) => sum + (i === index ? 0 : f.percentage), 0);
-      if (totalPct + Number(value) <= 100) {
-        newFormula[index].weight = Math.round((Number(value) / 100) * totalWeight);
+
+    if (field === 'weight') {
+      const recalculated = recalcPercentages(newFormula);
+      setFormula(recalculated);
+    } else if (field === 'percentage') {
+      const newPct = parseFloat(Number(value).toFixed(2));
+      const otherTotalWeight = newFormula.reduce((sum, f, i) => sum + (i === index ? 0 : f.weight), 0);
+      const otherTotalPct = newFormula.reduce((sum, f, i) => sum + (i === index ? 0 : f.percentage), 0);
+
+      if (otherTotalPct > 0 && newPct > 0 && newPct < 100) {
+        const targetTotalWeight = otherTotalWeight / ((100 - newPct) / 100);
+        newFormula[index].weight = Math.round(targetTotalWeight * (newPct / 100));
+        setFormula(recalcPercentages(newFormula));
       }
+    } else {
+      setFormula(newFormula);
     }
-    setFormula(newFormula);
   };
 
   const handleSubmit = () => {
@@ -75,12 +94,15 @@ export default function PowderMix() {
       return;
     }
 
+    const finalFormula = recalcPercentages(formula);
+    const finalTotalWeight = finalFormula.reduce((sum, f) => sum + f.weight, 0);
+
     const record: PowderMixRecord = {
       id: generateId(),
       batchId,
       productName,
-      formula: [...formula],
-      totalWeight,
+      formula: finalFormula,
+      totalWeight: finalTotalWeight,
       lubricant,
       lubricantWeight,
       operator,
@@ -92,7 +114,11 @@ export default function PowderMix() {
     setShowForm(false);
     setBatchId(generateBatchNo());
     setProductName('');
-    setFormula([{ name: '铁粉', percentage: 95, weight: 47500 }]);
+    setFormula([
+      { name: '铁粉', percentage: 95, weight: 47500 },
+      { name: '铜粉', percentage: 2, weight: 1000 },
+      { name: '石墨粉', percentage: 3, weight: 1500 },
+    ]);
     setLubricantWeight(500);
     setOperator('');
     setMixingTime(45);
@@ -148,16 +174,27 @@ export default function PowderMix() {
                           options={powderOptions}
                           className="flex-1"
                         />
-                        <Input
-                          type="number"
-                          value={powder.weight}
-                          onChange={(e) => updatePowder(index, 'weight', parseFloat(e.target.value) || 0)}
-                          className="w-24"
-                          placeholder="重量"
-                        />
-                        <span className="text-xs text-slate-500 w-12">
-                          {powder.percentage.toFixed(1)}%
-                        </span>
+                        <div className="flex items-center gap-1 w-28">
+                          <Input
+                            type="number"
+                            value={powder.weight}
+                            onChange={(e) => updatePowder(index, 'weight', parseFloat(e.target.value) || 0)}
+                            className="w-16 text-right"
+                            placeholder="重量"
+                          />
+                          <span className="text-xs text-slate-500">g</span>
+                        </div>
+                        <div className="flex items-center gap-1 w-20">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={powder.percentage}
+                            onChange={(e) => updatePowder(index, 'percentage', parseFloat(e.target.value) || 0)}
+                            className="w-14 text-right"
+                            placeholder="占比"
+                          />
+                          <span className="text-xs text-slate-500">%</span>
+                        </div>
                         <button
                           onClick={() => removePowder(index)}
                           className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
@@ -168,9 +205,18 @@ export default function PowderMix() {
                       </div>
                     ))}
                   </div>
-                  <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between text-sm">
-                    <span className="text-slate-500">总重量</span>
-                    <span className="font-semibold text-slate-800">{totalWeight.toLocaleString()} g</span>
+                  <div className="mt-2 pt-2 border-t border-slate-200 space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">总重量</span>
+                      <span className="font-semibold text-slate-800">{totalWeight.toLocaleString()} g</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-500">配比合计</span>
+                      <span className={`font-semibold ${Math.abs(totalPercentage - 100) < 0.1 ? 'text-green-600' : 'text-orange-600'}`}>
+                        {totalPercentage.toFixed(2)}%
+                        {Math.abs(totalPercentage - 100) >= 0.1 && ' (需调整)'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -240,7 +286,11 @@ export default function PowderMix() {
                 <tbody>
                   {powderMixRecords.map((record) => (
                     <tr key={record.id} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="py-3 px-3 font-mono text-xs text-blue-600">{record.batchId}</td>
+                      <td className="py-3 px-3">
+                        <Link to={`/batch/${record.batchId}`} className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline">
+                          {record.batchId}
+                        </Link>
+                      </td>
                       <td className="py-3 px-3 font-medium text-slate-800">{record.productName}</td>
                       <td className="py-3 px-3">
                         <div className="flex flex-wrap gap-1">

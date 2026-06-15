@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Search, Download, Filter, ChevronDown, ChevronUp, Flame, Clock, User } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { Input, Button, Select, StatusBadge } from '@/components/FormField';
@@ -107,7 +108,15 @@ export default function FurnaceLedger() {
                     <td className="py-3 px-3 font-mono text-xs font-medium text-blue-600">
                       {record.furnaceNo}
                     </td>
-                    <td className="py-3 px-3 font-mono text-xs text-slate-500">{record.batchId}</td>
+                    <td className="py-3 px-3">
+                      <Link
+                        to={`/batch/${record.batchId}`}
+                        className="font-mono text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {record.batchId}
+                      </Link>
+                    </td>
                     <td className="py-3 px-3 font-medium text-slate-800">{record.productName}</td>
                     <td className="py-3 px-3 text-slate-600">{record.furnaceId}</td>
                     <td className="py-3 px-3 text-slate-600">{record.atmosphereType}</td>
@@ -132,7 +141,13 @@ export default function FurnaceLedger() {
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-500">批次号</span>
-                                <span className="font-medium text-slate-800">{record.batchId}</span>
+                                <Link
+                                  to={`/batch/${record.batchId}`}
+                                  className="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {record.batchId}
+                                </Link>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-slate-500">产品名称</span>

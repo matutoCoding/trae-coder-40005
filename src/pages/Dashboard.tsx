@@ -14,10 +14,11 @@ import {
   CheckCircle,
   Clock,
   AlertTriangle,
+  Layers,
 } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { StatusBadge } from '@/components/FormField';
-import { useAppStore } from '@/store';
+import { useAppStore, PROCESS_NAMES, PROCESS_ORDER, type ProcessKey } from '@/store';
 import { StatCard } from '@/components/StatCard';
 
 const processItems = [
@@ -40,6 +41,7 @@ export default function Dashboard() {
     sizingRecords,
     impregnationRecords,
     inspectionRecords,
+    getAllBatchesWithStatus,
   } = useAppStore();
 
   const activeSintering = sinteringRecords.filter((r) => r.status === 'sintering').length;
@@ -51,6 +53,20 @@ export default function Dashboard() {
 
   const recentSintering = [...sinteringRecords].slice(0, 5);
   const recentInspection = [...inspectionRecords].slice(0, 5);
+  const batches = getAllBatchesWithStatus().slice(0, 8);
+
+  const getProcessColor = (process: ProcessKey) => {
+    const colors: Record<ProcessKey, string> = {
+      powderMix: 'bg-blue-500',
+      blending: 'bg-green-500',
+      pressing: 'bg-orange-500',
+      sintering: 'bg-red-500',
+      sizing: 'bg-purple-500',
+      impregnation: 'bg-cyan-500',
+      inspection: 'bg-teal-500',
+    };
+    return colors[process];
+  };
 
   return (
     <div className="space-y-6">
@@ -235,36 +251,63 @@ export default function Dashboard() {
         </PageCard>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <PageCard>
-          <div className="text-center">
-            <Activity size={24} className="mx-auto text-blue-500 mb-2" />
-            <p className="text-2xl font-bold text-slate-800">{powderMixRecords.length}</p>
-            <p className="text-xs text-slate-500">配料批次</p>
-          </div>
-        </PageCard>
-        <PageCard>
-          <div className="text-center">
-            <Shuffle size={24} className="mx-auto text-green-500 mb-2" />
-            <p className="text-2xl font-bold text-slate-800">{blendingRecords.length}</p>
-            <p className="text-xs text-slate-500">混料批次</p>
-          </div>
-        </PageCard>
-        <PageCard>
-          <div className="text-center">
-            <Target size={24} className="mx-auto text-purple-500 mb-2" />
-            <p className="text-2xl font-bold text-slate-800">{sizingRecords.length}</p>
-            <p className="text-xs text-slate-500">整形批次</p>
-          </div>
-        </PageCard>
-        <PageCard>
-          <div className="text-center">
-            <Droplet size={24} className="mx-auto text-cyan-500 mb-2" />
-            <p className="text-2xl font-bold text-slate-800">{impregnationRecords.length}</p>
-            <p className="text-xs text-slate-500">浸油批次</p>
-          </div>
-        </PageCard>
-      </div>
+      <PageCard
+        title="批次流转进度"
+        subtitle="各批次当前工序状态"
+        actions={
+          <span className="text-sm text-slate-500">
+            共 {getAllBatchesWithStatus().length} 批
+          </span>
+        }
+      >
+        <div className="space-y-3">
+          {batches.map((batch) => {
+            const progressIndex = PROCESS_ORDER.indexOf(batch.currentProcess);
+            const progressPercent = ((progressIndex + 1) / PROCESS_ORDER.length) * 100;
+            return (
+              <Link
+                key={batch.batchId}
+                to={`/batch/${batch.batchId}`}
+                className="block p-3 bg-slate-50 rounded-lg hover:bg-blue-50 hover:border-blue-200 border border-transparent transition-all group"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-blue-600 font-medium">{batch.batchId}</span>
+                    <span className="text-sm text-slate-700">{batch.productName}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className={`inline-block w-2 h-2 rounded-full ${getProcessColor(batch.currentProcess)}`} />
+                    <span className="text-xs text-slate-600">{PROCESS_NAMES[batch.currentProcess]}</span>
+                    <ChevronRight size={14} className="text-slate-300 group-hover:text-blue-400" />
+                  </div>
+                </div>
+                <div className="relative h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className={`absolute left-0 top-0 h-full rounded-full transition-all ${getProcessColor(batch.currentProcess)}`}
+                    style={{ width: `${progressPercent}%` }}
+                  />
+                </div>
+                <div className="flex justify-between mt-1.5">
+                  {PROCESS_ORDER.map((proc, i) => (
+                    <div
+                      key={proc}
+                      className={`w-2 h-2 rounded-full ${
+                        i <= progressIndex ? getProcessColor(batch.currentProcess) : 'bg-slate-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+              </Link>
+            );
+          })}
+          {batches.length === 0 && (
+            <div className="text-center py-8 text-slate-400 text-sm">
+              <Layers size={32} className="mx-auto mb-2 opacity-50" />
+              暂无批次记录
+            </div>
+          )}
+        </div>
+      </PageCard>
     </div>
   );
 }
