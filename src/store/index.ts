@@ -45,37 +45,12 @@ export const PROCESS_NAMES: Record<ProcessKey, string> = {
   inspection: '尺寸检验',
 };
 
-function recordIsReworked(record: unknown, reworkRecords: ReworkRecord[]): boolean {
-  if (!record || !reworkRecords.length) return false;
-  const recordCreatedAt = (record as any).createdAt;
-  if (!recordCreatedAt) return false;
-
-  for (const rework of reworkRecords) {
-    if (recordCreatedAt < rework.createdAt) {
-      const reworkFromIndex = PROCESS_ORDER.indexOf(rework.reworkFrom);
-      const reworkToIndex = PROCESS_ORDER.indexOf(rework.reworkTo);
-      const recordProcess = findProcessKeyForRecord(record);
-      if (recordProcess) {
-        const recordIndex = PROCESS_ORDER.indexOf(recordProcess);
-        if (recordIndex >= reworkToIndex && recordIndex <= reworkFromIndex) {
-          return true;
-        }
-      }
-    }
-  }
-  return false;
+function getLatestRecord(records: any[], batchId: string): any {
+  return records.find((r: any) => r.batchId === batchId) || null;
 }
 
-function findProcessKeyForRecord(record: unknown): ProcessKey | null {
-  const r = record as any;
-  if ('mixingTime' in r && 'formula' in r) return 'powderMix';
-  if ('granulationSize' in r) return 'blending';
-  if ('pressingPressure' in r && 'greenDensity' in r) return 'pressing';
-  if ('maxTemperature' in r && 'furnaceNo' in r) return 'sintering';
-  if ('sizingPressure' in r && 'sizingAmount' in r) return 'sizing';
-  if ('oilTemperature' in r && 'vacuumPressure' in r) return 'impregnation';
-  if ('dimensions' in r && 'overallResult' in r) return 'inspection';
-  return null;
+function getLatestRework(reworkRecords: ReworkRecord[], batchId: string): ReworkRecord | null {
+  return reworkRecords.find((r) => r.batchId === batchId) || null;
 }
 
 interface AppState {
@@ -192,15 +167,15 @@ export const useAppStore = create<AppState>()(
 
       getBatchById: (batchId) => {
         const state = get();
-        const powderMix = state.powderMixRecords.find((r) => r.batchId === batchId);
+        const powderMix = getLatestRecord(state.powderMixRecords, batchId) as PowderMixRecord | undefined;
         if (!powderMix) return null;
 
-        const blending = state.blendingRecords.find((r) => r.batchId === batchId);
-        const pressing = state.pressingRecords.find((r) => r.batchId === batchId);
-        const sintering = state.sinteringRecords.find((r) => r.batchId === batchId);
-        const sizing = state.sizingRecords.find((r) => r.batchId === batchId);
-        const impregnation = state.impregnationRecords.find((r) => r.batchId === batchId);
-        const inspection = state.inspectionRecords.find((r) => r.batchId === batchId);
+        const blending = getLatestRecord(state.blendingRecords, batchId) as BlendingRecord | undefined;
+        const pressing = getLatestRecord(state.pressingRecords, batchId) as PressingRecord | undefined;
+        const sintering = getLatestRecord(state.sinteringRecords, batchId) as SinteringRecord | undefined;
+        const sizing = getLatestRecord(state.sizingRecords, batchId) as SizingRecord | undefined;
+        const impregnation = getLatestRecord(state.impregnationRecords, batchId) as ImpregnationRecord | undefined;
+        const inspection = getLatestRecord(state.inspectionRecords, batchId) as InspectionRecord | undefined;
         const batchReworkRecords = state.reworkRecords.filter((r) => r.batchId === batchId);
 
         let currentProcess: ProcessKey = 'powderMix';
@@ -211,26 +186,26 @@ export const useAppStore = create<AppState>()(
         else if (pressing) currentProcess = 'pressing';
         else if (blending) currentProcess = 'blending';
 
-        if (batchReworkRecords.length > 0) {
-          const latestRework = batchReworkRecords[0];
+        const latestRework = getLatestRework(batchReworkRecords, batchId);
+        if (latestRework) {
           const reworkToIndex = PROCESS_ORDER.indexOf(latestRework.reworkTo);
-          const reworkFromIndex = PROCESS_ORDER.indexOf(latestRework.reworkFrom);
-          const currentIndex = PROCESS_ORDER.indexOf(currentProcess);
-
-          const recordsMap: Record<ProcessKey, unknown> = {
-            powderMix,
-            blending,
-            pressing,
-            sintering,
-            sizing,
-            impregnation,
-            inspection,
+          const recordsMap: Record<string, unknown> = {
+            powderMix, blending, pressing, sintering, sizing, impregnation, inspection,
           };
-
           const hasReworkToRecord = !!recordsMap[latestRework.reworkTo];
 
-          if (!hasReworkToRecord && reworkToIndex < currentIndex) {
+          if (!hasReworkToRecord) {
             currentProcess = latestRework.reworkTo;
+          } else {
+            let lastDoneProcess: ProcessKey = 'powderMix';
+            for (let i = PROCESS_ORDER.length - 1; i > PROCESS_ORDER.indexOf(latestRework.reworkTo); i--) {
+              const proc = PROCESS_ORDER[i];
+              if (recordsMap[proc]) {
+                lastDoneProcess = proc as ProcessKey;
+                break;
+              }
+            }
+            currentProcess = lastDoneProcess;
           }
         }
 
@@ -256,16 +231,7 @@ export const useAppStore = create<AppState>()(
         if (prevIndex < 0) return { available: [], blocked: [] };
         const prevProcess = PROCESS_ORDER[prevIndex];
 
-        const prevRecordsMap: Record<string, unknown[]> = {
-          powderMix: state.powderMixRecords,
-          blending: state.blendingRecords,
-          pressing: state.pressingRecords,
-          sintering: state.sinteringRecords,
-          sizing: state.sizingRecords,
-          impregnation: state.impregnationRecords,
-        };
-
-        const currentRecordsMap: Record<string, unknown[]> = {
+        const allRecordsMap: Record<string, any[]> = {
           powderMix: state.powderMixRecords,
           blending: state.blendingRecords,
           pressing: state.pressingRecords,
@@ -275,77 +241,112 @@ export const useAppStore = create<AppState>()(
           inspection: state.inspectionRecords,
         };
 
-        const prevRecords = prevRecordsMap[prevProcess] || [];
-        const currentRecords = currentRecordsMap[currentProcess] || [];
-        const currentBatchIds = new Set(currentRecords.map((r: any) => r.batchId));
+        const currentRecords = allRecordsMap[currentProcess] || [];
+        const currentBatchIds = new Set(
+          currentRecords
+            .filter((r: any) => {
+              const rw = getLatestRework(state.reworkRecords, r.batchId);
+              if (!rw) return true;
+              return r.createdAt > rw.createdAt;
+            })
+            .map((r: any) => r.batchId)
+        );
+
+        const candidateBatches = new Map<string, { productName: string; prevRecord: any }>();
+
+        for (const [procKey, records] of Object.entries(allRecordsMap)) {
+          for (const record of records) {
+            const r = record as any;
+            if (candidateBatches.has(r.batchId)) continue;
+            if (currentBatchIds.has(r.batchId)) continue;
+
+            const rw = getLatestRework(state.reworkRecords, r.batchId);
+            if (rw) {
+              if (rw.reworkTo === currentProcess) {
+                if (!currentBatchIds.has(r.batchId)) {
+                  const reworkToRecords = allRecordsMap[rw.reworkTo] || [];
+                  const hasNewRecord = reworkToRecords.some(
+                    (rec: any) => rec.batchId === r.batchId && rec.createdAt > rw.createdAt
+                  );
+                  if (!hasNewRecord) {
+                    const pmRecord = getLatestRecord(state.powderMixRecords, r.batchId);
+                    if (pmRecord) {
+                      candidateBatches.set(r.batchId, {
+                        productName: pmRecord.productName,
+                        prevRecord: r,
+                      });
+                    }
+                  }
+                }
+                continue;
+              }
+
+              if (PROCESS_ORDER.indexOf(procKey as ProcessKey) >= PROCESS_ORDER.indexOf(rw.reworkTo)) {
+                if (r.createdAt <= rw.createdAt) continue;
+              }
+            }
+
+            if (procKey === prevProcess) {
+              candidateBatches.set(r.batchId, {
+                productName: r.productName,
+                prevRecord: r,
+              });
+            }
+          }
+        }
 
         const available: { batchId: string; productName: string; prevRecord: unknown }[] = [];
         const blocked: { batchId: string; productName: string; reason: string; prevRecord: unknown }[] = [];
 
-        prevRecords.forEach((r: any) => {
-          if (currentBatchIds.has(r.batchId)) return;
-
+        candidateBatches.forEach(({ productName, prevRecord }, batchId) => {
           let blockedReason = '';
+          const r = prevRecord;
+          const rw = getLatestRework(state.reworkRecords, batchId);
 
-          if (prevProcess === 'sintering' && r.status === 'sintering') {
-            blockedReason = '烧结进行中';
-          }
-
-          if (!blockedReason && prevProcess === 'inspection') {
-            if (r.status === 'failed' || r.overallResult === 'fail') {
-              blockedReason = '检验不合格';
+          if (rw && rw.reworkTo !== currentProcess) {
+            const reworkToRecords = allRecordsMap[rw.reworkTo] || [];
+            const hasNewReworkToRecord = reworkToRecords.some(
+              (rec: any) => rec.batchId === batchId && rec.createdAt > rw.createdAt
+            );
+            if (!hasNewReworkToRecord) {
+              blockedReason = '返工进行中';
             }
           }
 
-          if (!blockedReason) {
-            if (prevProcess === 'pressing' && r.pressedQty === 0) {
-              blockedReason = '数量为0';
-            } else if (prevProcess === 'sizing' && r.sizingQty === 0) {
-              blockedReason = '数量为0';
-            } else if (prevProcess === 'impregnation' && r.processedQty === 0) {
-              blockedReason = '数量为0';
+          if (!blockedReason && currentProcess === 'sizing') {
+            const sinteringRec = getLatestRecord(state.sinteringRecords, batchId) as SinteringRecord | undefined;
+            if (sinteringRec) {
+              const isOldRecord = rw && sinteringRec.createdAt <= rw.createdAt;
+              if (!isOldRecord && sinteringRec.status === 'sintering') {
+                blockedReason = '烧结进行中';
+              }
             }
           }
 
-          const batchReworks = state.reworkRecords.filter((rw) => rw.batchId === r.batchId);
-          if (batchReworks.length > 0) {
-            const latestRework = batchReworks[0];
-            const reworkToIndex = PROCESS_ORDER.indexOf(latestRework.reworkTo);
-            const currentProcessIndex = PROCESS_ORDER.indexOf(currentProcess);
+          if (!blockedReason && currentProcess === 'impregnation') {
+            const sizingRec = getLatestRecord(state.sizingRecords, batchId) as SizingRecord | undefined;
+            if (sizingRec) {
+              const isOldRecord = rw && sizingRec.createdAt <= rw.createdAt;
+              if (!isOldRecord && sizingRec.sizingQty === 0) {
+                blockedReason = '数量为0';
+              }
+            }
+          }
 
-            const recordsMap: Record<ProcessKey, unknown[]> = {
-              powderMix: state.powderMixRecords,
-              blending: state.blendingRecords,
-              pressing: state.pressingRecords,
-              sintering: state.sinteringRecords,
-              sizing: state.sizingRecords,
-              impregnation: state.impregnationRecords,
-              inspection: state.inspectionRecords,
-            };
-
-            const reworkToRecords = recordsMap[latestRework.reworkTo] || [];
-            const hasReworkToRecord = reworkToRecords.some((rec: any) => rec.batchId === r.batchId);
-
-            if (!hasReworkToRecord && reworkToIndex !== currentProcessIndex) {
-              if (!blockedReason) {
-                blockedReason = '返工进行中';
+          if (!blockedReason && currentProcess === 'inspection') {
+            const impregRec = getLatestRecord(state.impregnationRecords, batchId) as ImpregnationRecord | undefined;
+            if (impregRec) {
+              const isOldRecord = rw && impregRec.createdAt <= rw.createdAt;
+              if (!isOldRecord && impregRec.processedQty === 0) {
+                blockedReason = '数量为0';
               }
             }
           }
 
           if (blockedReason) {
-            blocked.push({
-              batchId: r.batchId,
-              productName: r.productName,
-              reason: blockedReason,
-              prevRecord: r,
-            });
+            blocked.push({ batchId, productName, reason: blockedReason, prevRecord: r });
           } else {
-            available.push({
-              batchId: r.batchId,
-              productName: r.productName,
-              prevRecord: r,
-            });
+            available.push({ batchId, productName, prevRecord: r });
           }
         });
 
@@ -358,45 +359,51 @@ export const useAppStore = create<AppState>()(
         if (!batchData) return 'pending';
 
         const record = batchData.records[processKey];
-        const batchReworks = state.reworkRecords.filter((r) => r.batchId === batchId);
+        const latestRework = getLatestRework(state.reworkRecords, batchId);
         const processIndex = PROCESS_ORDER.indexOf(processKey);
 
-        if (processKey === 'inspection') {
-          const inspectRecord = record as InspectionRecord | undefined;
-          if (inspectRecord && (inspectRecord.status === 'failed' || inspectRecord.overallResult === 'fail')) {
+        if (processKey === 'inspection' && record) {
+          const inspectRecord = record as InspectionRecord;
+          if (inspectRecord.overallResult === 'fail' || inspectRecord.status === 'failed') {
+            if (!latestRework) return 'failed';
+            const newInspection = state.inspectionRecords.find(
+              (r) => r.batchId === batchId && r.createdAt > latestRework.createdAt && r.overallResult === 'pass'
+            );
+            if (newInspection) return 'completed';
             return 'failed';
           }
+          return 'completed';
         }
 
-        if (batchReworks.length > 0) {
-          const latestRework = batchReworks[0];
-          const reworkFromIndex = PROCESS_ORDER.indexOf(latestRework.reworkFrom);
+        if (latestRework) {
           const reworkToIndex = PROCESS_ORDER.indexOf(latestRework.reworkTo);
-          const isReworkedRecord = recordIsReworked(record, batchReworks);
-
-          if (processKey === latestRework.reworkTo) {
-            if (!record || isReworkedRecord) {
-              return 'in-progress';
-            }
-            return 'completed';
-          }
-
-          if (processIndex > reworkToIndex && processIndex < reworkFromIndex) {
-            if (record && !isReworkedRecord) {
-              return 'completed';
-            }
-            return 'pending';
-          }
+          const reworkFromIndex = PROCESS_ORDER.indexOf(latestRework.reworkFrom);
+          const isNewRecord = record && (record as any).createdAt > latestRework.createdAt;
 
           if (processIndex < reworkToIndex) {
             return 'completed';
           }
 
-          if (processIndex === reworkFromIndex && processKey !== 'inspection') {
-            if (record && !isReworkedRecord) {
+          if (processKey === latestRework.reworkTo) {
+            return isNewRecord ? 'completed' : 'in-progress';
+          }
+
+          if (processIndex > reworkToIndex && processIndex < reworkFromIndex) {
+            return isNewRecord ? 'completed' : 'pending';
+          }
+
+          if (processIndex === reworkFromIndex) {
+            const fromRecord = batchData.records[processKey];
+            if (fromRecord) {
+              const isOld = (fromRecord as any).createdAt <= latestRework.createdAt;
+              if (isOld) return 'failed';
               return 'completed';
             }
             return 'pending';
+          }
+
+          if (processIndex > reworkFromIndex) {
+            return isNewRecord ? 'completed' : 'pending';
           }
         }
 
@@ -411,8 +418,7 @@ export const useAppStore = create<AppState>()(
           const sinterRecord = record as SinteringRecord;
           if (sinterRecord.status === 'sintering') return 'in-progress';
           if (sinterRecord.status === 'failed') return 'failed';
-          if (sinterRecord.status === 'completed') return 'completed';
-          return 'pending';
+          return 'completed';
         }
 
         const anyRecord = record as any;
@@ -423,6 +429,7 @@ export const useAppStore = create<AppState>()(
       },
 
       createRework: (batchId, reworkFrom, reworkTo, reason, operator) => {
+        const state = get();
         const reworkRecord: ReworkRecord = {
           id: generateId(),
           batchId,
@@ -433,23 +440,45 @@ export const useAppStore = create<AppState>()(
           createdAt: formatDate(new Date()),
         };
 
-        set((state) => ({
+        const reworkToIndex = PROCESS_ORDER.indexOf(reworkTo);
+        const reworkFromIndex = PROCESS_ORDER.indexOf(reworkFrom);
+
+        const newState: any = {
           reworkRecords: [reworkRecord, ...state.reworkRecords],
-        }));
+        };
+
+        const recordKeys: ProcessKey[] = ['sintering', 'sizing', 'impregnation', 'inspection'];
+        for (const key of recordKeys) {
+          const processIndex = PROCESS_ORDER.indexOf(key);
+          if (processIndex >= reworkToIndex && processIndex < reworkFromIndex) {
+            const stateKey = `${key}Records` as keyof typeof state;
+            if (Array.isArray((state as any)[stateKey])) {
+              newState[stateKey] = (state as any)[stateKey].filter(
+                (r: any) => r.batchId !== batchId
+              );
+            }
+          }
+        }
+
+        set(newState);
       },
 
       hasUnfinishedRework: (batchId) => {
         const state = get();
-        const batchReworks = state.reworkRecords.filter((r) => r.batchId === batchId);
-        if (batchReworks.length === 0) return false;
+        const latestRework = getLatestRework(state.reworkRecords, batchId);
+        if (!latestRework) return false;
 
-        const latestRework = batchReworks[0];
-        const batchInspections = state.inspectionRecords.filter((r) => r.batchId === batchId);
-        
-        if (batchInspections.length === 0) return true;
-
-        const latestInspection = batchInspections[0];
-        return latestRework.createdAt > latestInspection.createdAt;
+        const reworkToRecords = (state as any)[`${latestRework.reworkTo}Records`] || [];
+        const hasNewRecord = reworkToRecords.some(
+          (r: any) => r.batchId === batchId && r.createdAt > latestRework.createdAt
+        );
+        if (hasNewRecord) {
+          const newInspection = state.inspectionRecords.find(
+            (r) => r.batchId === batchId && r.createdAt > latestRework.createdAt && r.overallResult === 'pass'
+          );
+          return !newInspection;
+        }
+        return true;
       },
 
       getAllBatchesWithStatus: () => {
@@ -461,13 +490,15 @@ export const useAppStore = create<AppState>()(
         });
 
         const batches = Array.from(allBatches.entries()).map(([batchId, info]) => {
+          const latestRework = getLatestRework(state.reworkRecords, batchId);
+
           let currentProcess: ProcessKey = 'powderMix';
-          const inspectionRecord = state.inspectionRecords.find((r) => r.batchId === batchId);
-          const impregnationRecord = state.impregnationRecords.find((r) => r.batchId === batchId);
-          const sizingRecord = state.sizingRecords.find((r) => r.batchId === batchId);
-          const sinteringRecord = state.sinteringRecords.find((r) => r.batchId === batchId);
-          const pressingRecord = state.pressingRecords.find((r) => r.batchId === batchId);
-          const blendingRecord = state.blendingRecords.find((r) => r.batchId === batchId);
+          const inspectionRecord = getLatestRecord(state.inspectionRecords, batchId) as InspectionRecord | undefined;
+          const impregnationRecord = getLatestRecord(state.impregnationRecords, batchId) as ImpregnationRecord | undefined;
+          const sizingRecord = getLatestRecord(state.sizingRecords, batchId) as SizingRecord | undefined;
+          const sinteringRecord = getLatestRecord(state.sinteringRecords, batchId) as SinteringRecord | undefined;
+          const pressingRecord = getLatestRecord(state.pressingRecords, batchId) as PressingRecord | undefined;
+          const blendingRecord = getLatestRecord(state.blendingRecords, batchId) as BlendingRecord | undefined;
 
           if (inspectionRecord) currentProcess = 'inspection';
           else if (impregnationRecord) currentProcess = 'impregnation';
@@ -476,17 +507,13 @@ export const useAppStore = create<AppState>()(
           else if (pressingRecord) currentProcess = 'pressing';
           else if (blendingRecord) currentProcess = 'blending';
 
-          const batchReworks = state.reworkRecords.filter((r) => r.batchId === batchId);
-          const hasRework = batchReworks.length > 0;
           let isReworkInProgress = false;
+          const hasRework = !!latestRework;
 
-          if (hasRework) {
-            const latestRework = batchReworks[0];
+          if (latestRework) {
             const reworkToIndex = PROCESS_ORDER.indexOf(latestRework.reworkTo);
-            const currentIndex = PROCESS_ORDER.indexOf(currentProcess);
-
-            const recordsMap: Record<ProcessKey, unknown> = {
-              powderMix: state.powderMixRecords.find((r) => r.batchId === batchId),
+            const recordsMap: Record<string, unknown> = {
+              powderMix: getLatestRecord(state.powderMixRecords, batchId),
               blending: blendingRecord,
               pressing: pressingRecord,
               sintering: sinteringRecord,
@@ -495,20 +522,37 @@ export const useAppStore = create<AppState>()(
               inspection: inspectionRecord,
             };
 
-            const hasReworkToRecord = !!recordsMap[latestRework.reworkTo];
+            const reworkToRecord = recordsMap[latestRework.reworkTo];
+            const hasNewReworkToRecord = reworkToRecord && (reworkToRecord as any).createdAt > latestRework.createdAt;
 
-            if (!hasReworkToRecord && reworkToIndex < currentIndex) {
+            if (!hasNewReworkToRecord) {
               currentProcess = latestRework.reworkTo;
               isReworkInProgress = true;
+            } else {
+              let lastDoneProcess: ProcessKey = latestRework.reworkTo;
+              for (let i = PROCESS_ORDER.length - 1; i > reworkToIndex; i--) {
+                const proc = PROCESS_ORDER[i];
+                const rec = recordsMap[proc];
+                if (rec && (rec as any).createdAt > latestRework.createdAt) {
+                  lastDoneProcess = proc as ProcessKey;
+                  break;
+                }
+              }
+              currentProcess = lastDoneProcess;
             }
           }
 
           const hasFailedInspection = !!(inspectionRecord && (inspectionRecord.status === 'failed' || inspectionRecord.overallResult === 'fail'));
 
           let batchStatus: 'completed' | 'in-progress' | 'failed' | 'rework' = 'in-progress';
-          if (hasRework && isReworkInProgress) {
+          if (isReworkInProgress) {
             batchStatus = 'rework';
-          } else if (hasFailedInspection && !isReworkInProgress) {
+          } else if (hasRework && hasFailedInspection) {
+            const newPassInspection = state.inspectionRecords.find(
+              (r) => r.batchId === batchId && r.createdAt > (latestRework?.createdAt || '') && r.overallResult === 'pass'
+            );
+            batchStatus = newPassInspection ? 'completed' : 'rework';
+          } else if (hasFailedInspection && !hasRework) {
             batchStatus = 'failed';
           } else if (currentProcess === 'inspection' && inspectionRecord && inspectionRecord.overallResult === 'pass') {
             batchStatus = 'completed';
