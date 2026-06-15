@@ -55,34 +55,34 @@ type ProcessStatus = 'completed' | 'in-progress' | 'failed' | 'pending';
 
 function getProcessStatus(
   processKey: ProcessKey,
-  currentProcess: ProcessKey,
-  record: unknown,
-  reworkRecords: ReworkRecord[]
+  batchId: string,
+  getBatchProcessStatus: (batchId: string, processKey: ProcessKey) => 'pending' | 'in-progress' | 'completed' | 'failed' | 'rework'
 ): ProcessStatus {
-  if (!record) {
-    const processIndex = PROCESS_ORDER.indexOf(processKey);
-    const currentIndex = PROCESS_ORDER.indexOf(currentProcess);
-    if (processIndex === currentIndex) {
-      return 'in-progress';
+  const status = getBatchProcessStatus(batchId, processKey);
+  if (status === 'rework') return 'pending';
+  return status as ProcessStatus;
+}
+
+function isRecordReworked(
+  record: unknown,
+  processKey: ProcessKey,
+  reworkRecords: ReworkRecord[]
+): boolean {
+  if (!record || !reworkRecords.length) return false;
+  const recordCreatedAt = (record as any).createdAt;
+  if (!recordCreatedAt) return false;
+  const processIndex = PROCESS_ORDER.indexOf(processKey);
+
+  for (const rework of reworkRecords) {
+    if (recordCreatedAt < rework.createdAt) {
+      const reworkFromIndex = PROCESS_ORDER.indexOf(rework.reworkFrom);
+      const reworkToIndex = PROCESS_ORDER.indexOf(rework.reworkTo);
+      if (processIndex >= reworkToIndex && processIndex <= reworkFromIndex) {
+        return true;
+      }
     }
-    return 'pending';
   }
-
-  const recordStatus = (record as any).status;
-
-  if (recordStatus === 'failed') return 'failed';
-  if (recordStatus === 'sintering') return 'in-progress';
-  if (recordStatus === 'in-progress') return 'in-progress';
-
-  if (processKey === currentProcess) {
-    const processIndex = PROCESS_ORDER.indexOf(processKey);
-    const hasReworkToCurrent = reworkRecords.some(
-      (rw) => PROCESS_ORDER.indexOf(rw.reworkTo) === processIndex
-    );
-    if (hasReworkToCurrent) return 'in-progress';
-  }
-
-  return 'completed';
+  return false;
 }
 
 function PowderMixDetail({ record }: { record: PowderMixRecord }) {
@@ -515,7 +515,7 @@ function ReworkNode({ reworkRecord }: { reworkRecord: ReworkRecord }) {
 
 export default function BatchHistory() {
   const { batchId } = useParams<{ batchId: string }>();
-  const { getBatchById } = useAppStore();
+  const { getBatchById, getBatchProcessStatus } = useAppStore();
   const [expandedProcess, setExpandedProcess] = useState<ProcessKey | null>(null);
 
   const batchData = batchId ? getBatchById(batchId) : null;
@@ -526,22 +526,22 @@ export default function BatchHistory() {
     const items: TimelineItem[] = [];
 
     PROCESS_ORDER.forEach((processKey) => {
-      items.push({
-        type: 'process',
-        processKey,
-        id: `process-${processKey}`,
-      });
-
-      const reworksAfter = batchData.reworkRecords.filter(
-        (rw) => rw.reworkFrom === processKey
+      const reworksBefore = batchData.reworkRecords.filter(
+        (rw) => rw.reworkTo === processKey
       );
 
-      reworksAfter.forEach((rw) => {
+      reworksBefore.forEach((rw) => {
         items.push({
           type: 'rework',
           reworkRecord: rw,
           id: `rework-${rw.id}`,
         });
+      });
+
+      items.push({
+        type: 'process',
+        processKey,
+        id: `process-${processKey}`,
       });
     });
 
@@ -574,9 +574,19 @@ export default function BatchHistory() {
   const inspectionRecord = records.inspection as InspectionRecord | undefined;
   const hasInspectionFailed = inspectionRecord?.overallResult === 'fail';
   const hasReworkInProgress = reworkRecords.length > 0;
+  const latestRework = reworkRecords.length > 0 ? reworkRecords[0] : null;
+
+  const displayProcess = latestRework ? latestRework.reworkTo : currentProcess;
+  const isReworking = hasReworkInProgress && latestRework &&
+    getBatchProcessStatus(batchId!, latestRework.reworkTo) === 'in-progress';
 
   const toggleExpand = (processKey: ProcessKey) => {
-    if (!records[processKey]) return;
+    const record = records[processKey];
+    if (!record) return;
+    const isReworked = isRecordReworked(record, processKey, reworkRecords);
+    const isInspectionFailed = processKey === 'inspection' &&
+      (record as InspectionRecord | undefined)?.overallResult === 'fail';
+    if (isReworked && !isInspectionFailed) return;
     setExpandedProcess(expandedProcess === processKey ? null : processKey);
   };
 
@@ -644,21 +654,21 @@ export default function BatchHistory() {
           <div>
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h2 className="text-xl font-bold text-slate-800">{batchId}</h2>
-              {hasInspectionFailed && (
-                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center gap-1">
-                  <AlertCircle size={12} />
-                  检验不合格
-                </span>
-              )}
-              {hasReworkInProgress && !hasInspectionFailed && (
+              {isReworking && (
                 <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium flex items-center gap-1">
                   <RotateCcw size={12} />
                   返工中
                 </span>
               )}
-              {!hasInspectionFailed && !hasReworkInProgress && (
+              {hasInspectionFailed && !isReworking && (
+                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  检验不合格
+                </span>
+              )}
+              {!isReworking && (
                 <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                  {PROCESS_NAMES[currentProcess]}
+                  {PROCESS_NAMES[displayProcess]}
                 </span>
               )}
             </div>
@@ -691,11 +701,14 @@ export default function BatchHistory() {
 
               const processKey = item.processKey!;
               const record = records[processKey];
-              const status = getProcessStatus(processKey, currentProcess, record, reworkRecords);
+              const status = getProcessStatus(processKey, batchId!, getBatchProcessStatus);
               const Icon = processIcons[processKey];
               const color = processColors[processKey];
               const isExpanded = expandedProcess === processKey;
-              const hasRecord = !!record;
+              const isReworked = isRecordReworked(record, processKey, reworkRecords);
+              const isInspectionFailed = processKey === 'inspection' &&
+                (record as InspectionRecord | undefined)?.overallResult === 'fail';
+              const hasRecord = !!record && (!isReworked || isInspectionFailed);
 
               return (
                 <div key={item.id} className="relative flex gap-4">
@@ -726,7 +739,7 @@ export default function BatchHistory() {
                             : 'border-slate-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
                           : 'border-slate-100 bg-slate-50'
                       }`}
-                      onClick={() => hasRecord && toggleExpand(processKey)}
+                      onClick={() => hasRecord && !isReworked && toggleExpand(processKey)}
                     >
                       <div className="p-4">
                         <div className="flex items-start justify-between">
@@ -751,11 +764,11 @@ export default function BatchHistory() {
                               <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                                 <span className="flex items-center gap-1">
                                   <User size={12} />
-                                  {getOperator(processKey, record)}
+                                  {hasRecord ? getOperator(processKey, record) : '-'}
                                 </span>
                                 <span className="flex items-center gap-1">
                                   <Clock size={12} />
-                                  {getTime(processKey, record)}
+                                  {hasRecord ? getTime(processKey, record) : '-'}
                                 </span>
                               </div>
                             </div>
@@ -768,7 +781,7 @@ export default function BatchHistory() {
                             >
                               {getStatusLabel(status)}
                             </span>
-                            {hasRecord && (
+                            {hasRecord && !isReworked && (
                               <button className="p-1 text-slate-400 hover:text-slate-600">
                                 {isExpanded ? (
                                   <ChevronUp size={18} />
@@ -780,7 +793,7 @@ export default function BatchHistory() {
                           </div>
                         </div>
 
-                        {isExpanded && hasRecord && (
+                        {isExpanded && hasRecord && !isReworked && (
                           <div className="mt-4 pt-4 border-t border-slate-100">
                             <ProcessDetail processKey={processKey} record={record} />
                           </div>

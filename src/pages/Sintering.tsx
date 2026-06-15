@@ -10,7 +10,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
-import { Plus, Play, Square, Flame, Thermometer, Wind, Droplets, Clock, Info } from 'lucide-react';
+import { Plus, Play, Square, Flame, Thermometer, Wind, Droplets, Clock, Info, Check } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button, StatusBadge } from '@/components/FormField';
 import { useAppStore } from '@/store';
@@ -50,7 +50,7 @@ function generateDefaultTempCurve(): TempPoint[] {
 }
 
 export default function Sintering() {
-  const { sinteringRecords, addSintering, getAvailableBatches } = useAppStore();
+  const { sinteringRecords, addSintering, updateSintering, getAvailableBatches } = useAppStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(
     sinteringRecords.length > 0 ? sinteringRecords[0].id : null
@@ -65,6 +65,9 @@ export default function Sintering() {
   const [maxTemperature, setMaxTemperature] = useState(1120);
   const [sinteringTime, setSinteringTime] = useState(120);
   const [operator, setOperator] = useState('');
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [completingRecordId, setCompletingRecordId] = useState<string | null>(null);
+  const [endTime, setEndTime] = useState('');
 
   const batches = getAvailableBatches('sintering') as { available: { batchId: string; productName: string; prevRecord: PressingRecord }[]; blocked: { batchId: string; productName: string; reason: string; prevRecord: PressingRecord }[] };
 
@@ -98,6 +101,45 @@ export default function Sintering() {
     setSinteringTime(120);
     setOperator('');
   };
+
+  const getCurrentDateTimeLocal = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  const handleOpenCompleteDialog = (recordId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCompletingRecordId(recordId);
+    setEndTime(getCurrentDateTimeLocal());
+    setShowCompleteDialog(true);
+  };
+
+  const handleCloseCompleteDialog = () => {
+    setShowCompleteDialog(false);
+    setCompletingRecordId(null);
+    setEndTime('');
+  };
+
+  const handleCompleteSintering = () => {
+    if (!completingRecordId || !endTime) {
+      alert('请选择结束时间');
+      return;
+    }
+
+    const endTimeFormatted = formatDate(new Date(endTime));
+    updateSintering(completingRecordId, {
+      status: 'completed',
+      endTime: endTimeFormatted,
+    });
+    handleCloseCompleteDialog();
+  };
+
+  const completingRecord = sinteringRecords.find((r) => r.id === completingRecordId);
 
   const handleBatchChange = (batchIdVal: string) => {
     setSelectedBatch(batchIdVal);
@@ -428,12 +470,65 @@ export default function Sintering() {
                     <span>{record.maxTemperature}°C</span>
                   </div>
                   <p className="mt-1 text-xs text-slate-400">{record.createdAt}</p>
+                  {record.status === 'sintering' && (
+                    <Button
+                      size="sm"
+                      variant="success"
+                      className="mt-2 w-full"
+                      onClick={(e) => handleOpenCompleteDialog(record.id, e)}
+                    >
+                      <Check size={14} className="mr-1" />
+                      完成烧结 / 放行
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
           </PageCard>
         </div>
       </div>
+
+      {showCompleteDialog && completingRecord && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4">
+            <div className="p-6 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-800">完成烧结 / 放行</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="p-3 bg-slate-50 rounded-lg space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">炉号</span>
+                  <span className="font-mono font-medium text-slate-800">{completingRecord.furnaceNo}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">批次号</span>
+                  <span className="font-mono font-medium text-slate-800">{completingRecord.batchId}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500">产品名称</span>
+                  <span className="font-medium text-slate-800">{completingRecord.productName}</span>
+                </div>
+              </div>
+              <FormField label="结束时间" required>
+                <Input
+                  type="datetime-local"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                />
+              </FormField>
+            </div>
+            <div className="p-6 border-t border-slate-200 flex justify-end gap-3">
+              <Button variant="secondary" onClick={handleCloseCompleteDialog}>
+                取消
+              </Button>
+              <Button onClick={handleCompleteSintering}>
+                <Check size={16} className="mr-2" />
+                确认完成
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

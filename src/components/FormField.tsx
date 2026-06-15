@@ -88,7 +88,7 @@ export function Textarea({ error, className, ...props }: TextareaProps) {
 }
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -110,6 +110,7 @@ export function Button({
       'border border-slate-300 text-slate-700 hover:bg-slate-50 focus:ring-slate-500/20',
     ghost: 'text-slate-600 hover:bg-slate-100 focus:ring-slate-500/20',
     danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500/30',
+    success: 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500/30',
   };
 
   const sizeClasses = {

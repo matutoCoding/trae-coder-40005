@@ -17,7 +17,7 @@ function generateDefaultDimensions(): DimensionItem[] {
 }
 
 export default function Inspection() {
-  const { inspectionRecords, addInspection, getAvailableBatches, createRework } = useAppStore();
+  const { inspectionRecords, addInspection, getAvailableBatches, createRework, hasUnfinishedRework } = useAppStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -35,7 +35,9 @@ export default function Inspection() {
   const [showReworkDialog, setShowReworkDialog] = useState(false);
   const [reworkTo, setReworkTo] = useState<'sizing' | 'sintering'>('sizing');
   const [reworkReason, setReworkReason] = useState('');
+  const [reworkOperator, setReworkOperator] = useState('');
   const [lastSavedRecord, setLastSavedRecord] = useState<InspectionRecord | null>(null);
+  const [selectedRecordForRework, setSelectedRecordForRework] = useState<InspectionRecord | null>(null);
 
   const batches = getAvailableBatches('inspection');
 
@@ -79,9 +81,11 @@ export default function Inspection() {
     setInspector('');
     setPrevImpregnationRecord(null);
     setLastSavedRecord(null);
+    setSelectedRecordForRework(null);
     setShowReworkDialog(false);
     setReworkTo('sizing');
     setReworkReason('');
+    setReworkOperator('');
   };
 
   const handleBatchChange = (batchIdVal: string) => {
@@ -135,21 +139,28 @@ export default function Inspection() {
   };
 
   const handleCreateRework = () => {
-    if (!lastSavedRecord || !reworkReason.trim()) {
-      alert('请填写返工原因');
+    const activeRecord = selectedRecordForRework || lastSavedRecord;
+    if (!activeRecord || !reworkReason.trim() || !reworkOperator.trim()) {
+      alert('请填写返工原因和操作人');
       return;
     }
 
     createRework(
-      lastSavedRecord.batchId,
+      activeRecord.batchId,
       'inspection',
       reworkTo,
       reworkReason,
-      lastSavedRecord.inspector
+      reworkOperator
     );
 
     setShowReworkDialog(false);
     resetForm();
+  };
+
+  const handleInitiateReworkFromList = (record: InspectionRecord) => {
+    setSelectedRecordForRework(record);
+    setReworkOperator(record.inspector);
+    setShowReworkDialog(true);
   };
 
   const passRate = inspectionRecords.length > 0
@@ -412,6 +423,7 @@ export default function Inspection() {
                     <th className="text-center py-3 px-3 font-semibold text-slate-600">结果</th>
                     <th className="text-left py-3 px-3 font-semibold text-slate-600">质检员</th>
                     <th className="text-left py-3 px-3 font-semibold text-slate-600">时间</th>
+                    <th className="text-center py-3 px-3 font-semibold text-slate-600">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -466,6 +478,24 @@ export default function Inspection() {
                       </td>
                       <td className="py-3 px-3 text-slate-600">{record.inspector}</td>
                       <td className="py-3 px-3 text-slate-500 text-xs">{record.createdAt}</td>
+                      <td className="py-3 px-3 text-center">
+                        {(record.status === 'failed' || record.overallResult === 'fail') && (
+                          hasUnfinishedRework(record.batchId) ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-amber-100 text-amber-700">
+                              返工中
+                            </span>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => handleInitiateReworkFromList(record)}
+                            >
+                              <RotateCcw size={12} className="mr-1" />
+                              发起返工
+                            </Button>
+                          )
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -495,7 +525,7 @@ export default function Inspection() {
             <div className="px-6 py-4 space-y-4">
               <div className="p-3 bg-red-50 rounded-lg border border-red-100">
                 <p className="text-xs text-red-600">
-                  批次: <span className="font-medium">{lastSavedRecord?.batchId}</span> - {lastSavedRecord?.productName}
+                  批次: <span className="font-medium">{(selectedRecordForRework || lastSavedRecord)?.batchId}</span> - {(selectedRecordForRework || lastSavedRecord)?.productName}
                 </p>
               </div>
 
@@ -517,6 +547,14 @@ export default function Inspection() {
                   placeholder="请填写返工原因"
                   value={reworkReason}
                   onChange={(e) => setReworkReason(e.target.value)}
+                />
+              </FormField>
+
+              <FormField label="操作人" required>
+                <Input
+                  placeholder="请输入操作人"
+                  value={reworkOperator}
+                  onChange={(e) => setReworkOperator(e.target.value)}
                 />
               </FormField>
             </div>
