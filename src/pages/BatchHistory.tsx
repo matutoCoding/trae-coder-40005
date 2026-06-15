@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -15,6 +15,8 @@ import {
   ChevronUp,
   AlertCircle,
   CheckCircle2,
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { useAppStore, PROCESS_NAMES, PROCESS_ORDER, ProcessKey } from '@/store';
@@ -26,6 +28,7 @@ import type {
   SizingRecord,
   ImpregnationRecord,
   InspectionRecord,
+  ReworkRecord,
 } from '@/types';
 
 const processIcons: Record<ProcessKey, typeof Beaker> = {
@@ -48,16 +51,38 @@ const processColors: Record<ProcessKey, string> = {
   inspection: 'emerald',
 };
 
-type ProcessStatus = 'completed' | 'in-progress' | 'pending';
+type ProcessStatus = 'completed' | 'in-progress' | 'failed' | 'pending';
 
 function getProcessStatus(
   processKey: ProcessKey,
   currentProcess: ProcessKey,
-  record: unknown
+  record: unknown,
+  reworkRecords: ReworkRecord[]
 ): ProcessStatus {
-  if (record) return 'completed';
-  if (processKey === currentProcess) return 'in-progress';
-  return 'pending';
+  if (!record) {
+    const processIndex = PROCESS_ORDER.indexOf(processKey);
+    const currentIndex = PROCESS_ORDER.indexOf(currentProcess);
+    if (processIndex === currentIndex) {
+      return 'in-progress';
+    }
+    return 'pending';
+  }
+
+  const recordStatus = (record as any).status;
+
+  if (recordStatus === 'failed') return 'failed';
+  if (recordStatus === 'sintering') return 'in-progress';
+  if (recordStatus === 'in-progress') return 'in-progress';
+
+  if (processKey === currentProcess) {
+    const processIndex = PROCESS_ORDER.indexOf(processKey);
+    const hasReworkToCurrent = reworkRecords.some(
+      (rw) => PROCESS_ORDER.indexOf(rw.reworkTo) === processIndex
+    );
+    if (hasReworkToCurrent) return 'in-progress';
+  }
+
+  return 'completed';
 }
 
 function PowderMixDetail({ record }: { record: PowderMixRecord }) {
@@ -431,12 +456,97 @@ function getTime(processKey: ProcessKey, record: unknown): string {
   return (record as any).createdAt || '-';
 }
 
+interface TimelineItem {
+  type: 'process' | 'rework';
+  processKey?: ProcessKey;
+  reworkRecord?: ReworkRecord;
+  id: string;
+}
+
+function ReworkNode({ reworkRecord }: { reworkRecord: ReworkRecord }) {
+  return (
+    <div className="relative flex gap-4">
+      <div className="relative z-10 flex-shrink-0">
+        <div className="w-10 h-10 rounded-full border-2 border-orange-500 bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-200">
+          <RotateCcw size={16} className="text-white" />
+        </div>
+      </div>
+
+      <div className="flex-1 pb-2">
+        <div className="bg-orange-50 rounded-lg border border-orange-200">
+          <div className="p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
+                <AlertTriangle size={20} className="text-orange-600" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <h4 className="font-semibold text-orange-800">返工</h4>
+                  <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium">
+                    返工中
+                  </span>
+                </div>
+                <p className="text-sm text-orange-700 mb-2">
+                  从 <span className="font-medium">{PROCESS_NAMES[reworkRecord.reworkFrom]}</span>{' '}
+                  返回到{' '}
+                  <span className="font-medium">{PROCESS_NAMES[reworkRecord.reworkTo]}</span>
+                </p>
+                <p className="text-xs text-orange-600 mb-2">
+                  原因：{reworkRecord.reason}
+                </p>
+                <div className="flex items-center gap-3 text-xs text-orange-500">
+                  <span className="flex items-center gap-1">
+                    <User size={12} />
+                    {reworkRecord.operator}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Clock size={12} />
+                    {reworkRecord.createdAt}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BatchHistory() {
   const { batchId } = useParams<{ batchId: string }>();
   const { getBatchById } = useAppStore();
   const [expandedProcess, setExpandedProcess] = useState<ProcessKey | null>(null);
 
   const batchData = batchId ? getBatchById(batchId) : null;
+
+  const timelineItems = useMemo<TimelineItem[]>(() => {
+    if (!batchData) return [];
+
+    const items: TimelineItem[] = [];
+
+    PROCESS_ORDER.forEach((processKey) => {
+      items.push({
+        type: 'process',
+        processKey,
+        id: `process-${processKey}`,
+      });
+
+      const reworksAfter = batchData.reworkRecords.filter(
+        (rw) => rw.reworkFrom === processKey
+      );
+
+      reworksAfter.forEach((rw) => {
+        items.push({
+          type: 'rework',
+          reworkRecord: rw,
+          id: `rework-${rw.id}`,
+        });
+      });
+    });
+
+    return items;
+  }, [batchData]);
 
   if (!batchData) {
     return (
@@ -459,11 +569,64 @@ export default function BatchHistory() {
     );
   }
 
-  const { productName, currentProcess, records } = batchData;
+  const { productName, currentProcess, records, reworkRecords } = batchData;
+
+  const inspectionRecord = records.inspection as InspectionRecord | undefined;
+  const hasInspectionFailed = inspectionRecord?.overallResult === 'fail';
+  const hasReworkInProgress = reworkRecords.length > 0;
 
   const toggleExpand = (processKey: ProcessKey) => {
     if (!records[processKey]) return;
     setExpandedProcess(expandedProcess === processKey ? null : processKey);
+  };
+
+  const getStatusLabel = (status: ProcessStatus): string => {
+    switch (status) {
+      case 'completed':
+        return '已完成';
+      case 'in-progress':
+        return '进行中';
+      case 'failed':
+        return '异常';
+      case 'pending':
+        return '未开始';
+    }
+  };
+
+  const getStatusDotClasses = (status: ProcessStatus): string => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-500 border-green-500';
+      case 'in-progress':
+        return 'bg-blue-500 border-blue-500';
+      case 'failed':
+        return 'bg-red-500 border-red-500';
+      case 'pending':
+        return 'bg-slate-200 border-slate-300';
+    }
+  };
+
+  const getStatusBadgeClasses = (status: ProcessStatus): string => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-700';
+      case 'in-progress':
+        return 'bg-blue-100 text-blue-700';
+      case 'failed':
+        return 'bg-red-100 text-red-700';
+      case 'pending':
+        return 'bg-slate-100 text-slate-500';
+    }
+  };
+
+  const iconBgClasses: Record<string, string> = {
+    blue: 'bg-blue-50 text-blue-600',
+    green: 'bg-green-50 text-green-600',
+    orange: 'bg-orange-50 text-orange-600',
+    red: 'bg-red-50 text-red-600',
+    purple: 'bg-purple-50 text-purple-600',
+    cyan: 'bg-cyan-50 text-cyan-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
   };
 
   return (
@@ -479,18 +642,32 @@ export default function BatchHistory() {
       <PageCard>
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h2 className="text-xl font-bold text-slate-800">{batchId}</h2>
-              <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                {PROCESS_NAMES[currentProcess]}
-              </span>
+              {hasInspectionFailed && (
+                <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-medium flex items-center gap-1">
+                  <AlertCircle size={12} />
+                  检验不合格
+                </span>
+              )}
+              {hasReworkInProgress && !hasInspectionFailed && (
+                <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full text-xs font-medium flex items-center gap-1">
+                  <RotateCcw size={12} />
+                  返工中
+                </span>
+              )}
+              {!hasInspectionFailed && !hasReworkInProgress && (
+                <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                  {PROCESS_NAMES[currentProcess]}
+                </span>
+              )}
             </div>
             <p className="text-slate-500 text-sm">产品名称: {productName}</p>
           </div>
           <div className="flex items-center gap-6">
             <div className="text-center">
               <p className="text-2xl font-bold text-slate-800">
-                {PROCESS_ORDER.filter((p) => records[p]).length}
+                {PROCESS_ORDER.filter((p) => records[p] && (records[p] as any).status !== 'failed').length}
               </p>
               <p className="text-xs text-slate-500">已完成工序</p>
             </div>
@@ -507,42 +684,33 @@ export default function BatchHistory() {
           <div className="absolute left-5 top-2 bottom-2 w-0.5 bg-slate-200" />
 
           <div className="space-y-4">
-            {PROCESS_ORDER.map((processKey) => {
+            {timelineItems.map((item) => {
+              if (item.type === 'rework' && item.reworkRecord) {
+                return <ReworkNode key={item.id} reworkRecord={item.reworkRecord} />;
+              }
+
+              const processKey = item.processKey!;
               const record = records[processKey];
-              const status = getProcessStatus(processKey, currentProcess, record);
+              const status = getProcessStatus(processKey, currentProcess, record, reworkRecords);
               const Icon = processIcons[processKey];
               const color = processColors[processKey];
               const isExpanded = expandedProcess === processKey;
               const hasRecord = !!record;
 
-              const dotColorClasses = {
-                completed: 'bg-green-500 border-green-500',
-                'in-progress': 'bg-blue-500 border-blue-500 animate-pulse',
-                pending: 'bg-slate-200 border-slate-300',
-              };
-
-              const iconBgClasses = {
-                blue: 'bg-blue-50 text-blue-600',
-                green: 'bg-green-50 text-green-600',
-                orange: 'bg-orange-50 text-orange-600',
-                red: 'bg-red-50 text-red-600',
-                purple: 'bg-purple-50 text-purple-600',
-                cyan: 'bg-cyan-50 text-cyan-600',
-                emerald: 'bg-emerald-50 text-emerald-600',
-              };
-
               return (
-                <div key={processKey} className="relative flex gap-4">
+                <div key={item.id} className="relative flex gap-4">
                   <div className="relative z-10 flex-shrink-0">
                     <div
                       className={`w-10 h-10 rounded-full border-2 flex items-center justify-center ${
-                        dotColorClasses[status]
-                      }`}
+                        getStatusDotClasses(status)
+                      } ${status === 'in-progress' ? 'animate-pulse' : ''}`}
                     >
                       {status === 'completed' ? (
                         <CheckCircle2 size={18} className="text-white" />
                       ) : status === 'in-progress' ? (
                         <Clock size={16} className="text-white" />
+                      ) : status === 'failed' ? (
+                        <AlertCircle size={16} className="text-white" />
                       ) : (
                         <Icon size={16} className="text-slate-400" />
                       )}
@@ -553,7 +721,9 @@ export default function BatchHistory() {
                     <div
                       className={`bg-white rounded-lg border transition-all ${
                         hasRecord
-                          ? 'border-slate-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
+                          ? status === 'failed'
+                            ? 'border-red-200 hover:border-red-300 hover:shadow-sm cursor-pointer'
+                            : 'border-slate-200 hover:border-blue-300 hover:shadow-sm cursor-pointer'
                           : 'border-slate-100 bg-slate-50'
                       }`}
                       onClick={() => hasRecord && toggleExpand(processKey)}
@@ -563,7 +733,9 @@ export default function BatchHistory() {
                           <div className="flex items-start gap-3">
                             <div
                               className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                                iconBgClasses[color as keyof typeof iconBgClasses]
+                                status === 'pending'
+                                  ? 'bg-slate-100 text-slate-400'
+                                  : iconBgClasses[color as keyof typeof iconBgClasses]
                               }`}
                             >
                               <Icon size={20} />
@@ -589,21 +761,13 @@ export default function BatchHistory() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {status === 'completed' && (
-                              <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                                已完成
-                              </span>
-                            )}
-                            {status === 'in-progress' && (
-                              <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
-                                进行中
-                              </span>
-                            )}
-                            {status === 'pending' && (
-                              <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-xs font-medium">
-                                未开始
-                              </span>
-                            )}
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${getStatusBadgeClasses(
+                                status
+                              )}`}
+                            >
+                              {getStatusLabel(status)}
+                            </span>
                             {hasRecord && (
                               <button className="p-1 text-slate-400 hover:text-slate-600">
                                 {isExpanded ? (

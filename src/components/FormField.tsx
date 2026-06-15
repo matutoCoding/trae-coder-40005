@@ -44,7 +44,7 @@ export function Input({ error, className, ...props }: InputProps) {
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   error?: boolean;
-  options: { value: string; label: string }[];
+  options: { value: string; label: string; disabled?: boolean }[];
 }
 
 export function Select({ error, options, className, ...props }: SelectProps) {
@@ -60,7 +60,7 @@ export function Select({ error, options, className, ...props }: SelectProps) {
       {...props}
     >
       {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
+        <option key={opt.value} value={opt.value} disabled={opt.disabled}>
           {opt.label}
         </option>
       ))}

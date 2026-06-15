@@ -107,6 +107,7 @@ export default function PowderMix() {
       lubricantWeight,
       operator,
       mixingTime,
+      status: 'completed',
       createdAt: formatDate(new Date()),
     };
 

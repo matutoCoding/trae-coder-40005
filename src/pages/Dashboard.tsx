@@ -68,6 +68,47 @@ export default function Dashboard() {
     return colors[process];
   };
 
+  const getBatchStatusInfo = (batch: { batchStatus: string; hasRework: boolean; hasFailedInspection: boolean; currentProcess: ProcessKey }) => {
+    if (batch.batchStatus === 'failed') {
+      return {
+        text: '不合格',
+        color: 'text-red-600',
+        bgColor: 'bg-red-500',
+        lightBg: 'bg-red-50',
+        badgeText: '不合格',
+        badgeClass: 'bg-red-100 text-red-700',
+      };
+    }
+    if (batch.batchStatus === 'rework') {
+      return {
+        text: '返工中',
+        color: 'text-orange-600',
+        bgColor: 'bg-orange-500',
+        lightBg: 'bg-orange-50',
+        badgeText: '返工中',
+        badgeClass: 'bg-orange-100 text-orange-700',
+      };
+    }
+    if (batch.batchStatus === 'completed') {
+      return {
+        text: PROCESS_NAMES[batch.currentProcess],
+        color: 'text-green-600',
+        bgColor: 'bg-green-500',
+        lightBg: 'bg-green-50',
+        badgeText: '已完成检验',
+        badgeClass: 'bg-green-100 text-green-700',
+      };
+    }
+    return {
+      text: PROCESS_NAMES[batch.currentProcess],
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-500',
+      lightBg: 'bg-blue-50',
+      badgeText: '进行中',
+      badgeClass: 'bg-blue-100 text-blue-700',
+    };
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -264,6 +305,7 @@ export default function Dashboard() {
           {batches.map((batch) => {
             const progressIndex = PROCESS_ORDER.indexOf(batch.currentProcess);
             const progressPercent = ((progressIndex + 1) / PROCESS_ORDER.length) * 100;
+            const statusInfo = getBatchStatusInfo(batch);
             return (
               <Link
                 key={batch.batchId}
@@ -274,16 +316,19 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-sm text-blue-600 font-medium">{batch.batchId}</span>
                     <span className="text-sm text-slate-700">{batch.productName}</span>
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${statusInfo.badgeClass}`}>
+                      {statusInfo.badgeText}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <span className={`inline-block w-2 h-2 rounded-full ${getProcessColor(batch.currentProcess)}`} />
-                    <span className="text-xs text-slate-600">{PROCESS_NAMES[batch.currentProcess]}</span>
+                    <span className={`inline-block w-2 h-2 rounded-full ${statusInfo.bgColor}`} />
+                    <span className={`text-xs ${statusInfo.color}`}>{statusInfo.text}</span>
                     <ChevronRight size={14} className="text-slate-300 group-hover:text-blue-400" />
                   </div>
                 </div>
                 <div className="relative h-1.5 bg-slate-200 rounded-full overflow-hidden">
                   <div
-                    className={`absolute left-0 top-0 h-full rounded-full transition-all ${getProcessColor(batch.currentProcess)}`}
+                    className={`absolute left-0 top-0 h-full rounded-full transition-all ${statusInfo.bgColor}`}
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
@@ -292,7 +337,7 @@ export default function Dashboard() {
                     <div
                       key={proc}
                       className={`w-2 h-2 rounded-full ${
-                        i <= progressIndex ? getProcessColor(batch.currentProcess) : 'bg-slate-200'
+                        i <= progressIndex ? statusInfo.bgColor : 'bg-slate-200'
                       }`}
                     />
                   ))}

@@ -4,6 +4,8 @@ export interface PowderFormula {
   weight: number;
 }
 
+export type RecordStatus = 'completed' | 'in-progress' | 'failed' | 'rework';
+
 export interface PowderMixRecord {
   id: string;
   batchId: string;
@@ -14,6 +16,8 @@ export interface PowderMixRecord {
   lubricantWeight: number;
   operator: string;
   mixingTime: number;
+  status: RecordStatus;
+  remark?: string;
   createdAt: string;
 }
 
@@ -28,6 +32,8 @@ export interface BlendingRecord {
   granulationSize: string;
   granulationYield: number;
   operator: string;
+  status: RecordStatus;
+  remark?: string;
   createdAt: string;
 }
 
@@ -43,6 +49,8 @@ export interface PressingRecord {
   greenHeight: number;
   pressedQty: number;
   operator: string;
+  status: RecordStatus;
+  remark?: string;
   createdAt: string;
 }
 
@@ -66,7 +74,8 @@ export interface SinteringRecord {
   startTime: string;
   endTime: string;
   operator: string;
-  status: 'sintering' | 'completed' | 'pending';
+  status: 'sintering' | 'completed' | 'pending' | 'failed';
+  remark?: string;
   createdAt: string;
 }
 
@@ -82,6 +91,9 @@ export interface SizingRecord {
   sizingAmount: number;
   sizingQty: number;
   operator: string;
+  status: RecordStatus;
+  remark?: string;
+  isRework?: boolean;
   createdAt: string;
 }
 
@@ -98,6 +110,8 @@ export interface ImpregnationRecord {
   afterWeight: number;
   processedQty: number;
   operator: string;
+  status: RecordStatus;
+  remark?: string;
   createdAt: string;
 }
 
@@ -122,8 +136,22 @@ export interface InspectionRecord {
   passQty: number;
   overallResult: 'pass' | 'fail';
   inspector: string;
+  status: RecordStatus;
+  remark?: string;
   createdAt: string;
 }
+
+export interface ReworkRecord {
+  id: string;
+  batchId: string;
+  reworkFrom: ProcessKey;
+  reworkTo: ProcessKey;
+  reason: string;
+  operator: string;
+  createdAt: string;
+}
+
+export type ProcessKey = 'powderMix' | 'blending' | 'pressing' | 'sintering' | 'sizing' | 'impregnation' | 'inspection';
 
 export interface Batch {
   id: string;

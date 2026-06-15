@@ -66,7 +66,20 @@ export default function Sintering() {
   const [sinteringTime, setSinteringTime] = useState(120);
   const [operator, setOperator] = useState('');
 
-  const availableBatches = getAvailableBatches('sintering') as { batchId: string; productName: string; prevRecord: PressingRecord }[];
+  const batches = getAvailableBatches('sintering') as { available: { batchId: string; productName: string; prevRecord: PressingRecord }[]; blocked: { batchId: string; productName: string; reason: string; prevRecord: PressingRecord }[] };
+
+  const batchOptions = [
+    { value: '', label: '请选择压制成型批次' },
+    ...batches.available.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}`,
+    })),
+    ...batches.blocked.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}（${b.reason}）`,
+      disabled: true,
+    })),
+  ];
 
   const selectedRecord = sinteringRecords.find((r) => r.id === selectedId);
 
@@ -89,7 +102,7 @@ export default function Sintering() {
   const handleBatchChange = (batchIdVal: string) => {
     setSelectedBatch(batchIdVal);
     if (batchIdVal) {
-      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      const batch = batches.available.find((b) => b.batchId === batchIdVal);
       if (batch) {
         setBatchId(batchIdVal);
         setProductName(batch.productName);
@@ -262,13 +275,7 @@ export default function Sintering() {
                     <Select
                       value={selectedBatch}
                       onChange={(e) => handleBatchChange(e.target.value)}
-                      options={[
-                        { value: '', label: '请选择压制成型批次' },
-                        ...availableBatches.map((b) => ({
-                          value: b.batchId,
-                          label: `${b.batchId} - ${b.productName}`,
-                        })),
-                      ]}
+                      options={batchOptions}
                     />
                   </FormField>
 
@@ -281,8 +288,8 @@ export default function Sintering() {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-slate-600">
                         <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
                         <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
-                        <div>压坯密度: <span className="font-medium text-slate-800">{availableBatches.find(b => b.batchId === selectedBatch)?.prevRecord?.greenDensity || '-'} g/cm³</span></div>
-                        <div>压坯重量: <span className="font-medium text-slate-800">{availableBatches.find(b => b.batchId === selectedBatch)?.prevRecord?.greenWeight || '-'} g</span></div>
+                        <div>压坯密度: <span className="font-medium text-slate-800">{batches.available.find(b => b.batchId === selectedBatch)?.prevRecord?.greenDensity || '-'} g/cm³</span></div>
+                        <div>压坯重量: <span className="font-medium text-slate-800">{batches.available.find(b => b.batchId === selectedBatch)?.prevRecord?.greenWeight || '-'} g</span></div>
                       </div>
                     </div>
                   )}

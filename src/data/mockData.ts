@@ -54,6 +54,7 @@ export const mockPowderMixRecords: PowderMixRecord[] = [
     lubricantWeight: 500,
     operator: '张工',
     mixingTime: 45,
+    status: 'completed',
     createdAt: '2025-06-16 08:30:00',
   },
   {
@@ -70,6 +71,7 @@ export const mockPowderMixRecords: PowderMixRecord[] = [
     lubricantWeight: 400,
     operator: '李工',
     mixingTime: 50,
+    status: 'completed',
     createdAt: '2025-06-16 10:15:00',
   },
 ];
@@ -86,6 +88,7 @@ export const mockBlendingRecords: BlendingRecord[] = [
     granulationSize: '60目',
     granulationYield: 92,
     operator: '王师傅',
+    status: 'completed',
     createdAt: '2025-06-16 09:20:00',
   },
 ];
@@ -103,6 +106,7 @@ export const mockPressingRecords: PressingRecord[] = [
     greenHeight: 20.5,
     pressedQty: 380,
     operator: '刘师傅',
+    status: 'completed',
     createdAt: '2025-06-16 11:00:00',
   },
   {
@@ -117,6 +121,7 @@ export const mockPressingRecords: PressingRecord[] = [
     greenHeight: 15.8,
     pressedQty: 500,
     operator: '陈师傅',
+    status: 'completed',
     createdAt: '2025-06-16 13:30:00',
   },
 ];
@@ -173,6 +178,7 @@ export const mockSizingRecords: SizingRecord[] = [
     sizingAmount: 0.2,
     sizingQty: 375,
     operator: '周师傅',
+    status: 'completed',
     createdAt: '2025-06-16 22:30:00',
   },
 ];
@@ -191,6 +197,7 @@ export const mockImpregnationRecords: ImpregnationRecord[] = [
     afterWeight: 142.8,
     processedQty: 370,
     operator: '吴师傅',
+    status: 'completed',
     createdAt: '2025-06-17 08:00:00',
   },
 ];
@@ -209,6 +216,7 @@ export const mockInspectionRecords: InspectionRecord[] = [
     passQty: 20,
     overallResult: 'pass',
     inspector: '质检员王',
+    status: 'completed',
     createdAt: '2025-06-17 10:00:00',
   },
 ];

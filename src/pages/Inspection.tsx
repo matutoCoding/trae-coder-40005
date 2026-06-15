@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Save, X, Ruler, Scale, Eye, CheckCircle, XCircle, Info } from 'lucide-react';
+import { Plus, Save, X, Ruler, Scale, Eye, CheckCircle, XCircle, Info, RotateCcw } from 'lucide-react';
 import { PageCard } from '@/components/PageCard';
 import { FormField, Input, Select, Button } from '@/components/FormField';
 import { useAppStore } from '@/store';
@@ -17,7 +17,7 @@ function generateDefaultDimensions(): DimensionItem[] {
 }
 
 export default function Inspection() {
-  const { inspectionRecords, addInspection, getAvailableBatches } = useAppStore();
+  const { inspectionRecords, addInspection, getAvailableBatches, createRework } = useAppStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState('');
   const [batchId, setBatchId] = useState('');
@@ -30,8 +30,27 @@ export default function Inspection() {
   const [sampleQty, setSampleQty] = useState(20);
   const [passQty, setPassQty] = useState(20);
   const [inspector, setInspector] = useState('');
+  const [prevImpregnationRecord, setPrevImpregnationRecord] = useState<ImpregnationRecord | null>(null);
 
-  const availableBatches = getAvailableBatches('inspection') as { batchId: string; productName: string; prevRecord: ImpregnationRecord }[];
+  const [showReworkDialog, setShowReworkDialog] = useState(false);
+  const [reworkTo, setReworkTo] = useState<'sizing' | 'sintering'>('sizing');
+  const [reworkReason, setReworkReason] = useState('');
+  const [lastSavedRecord, setLastSavedRecord] = useState<InspectionRecord | null>(null);
+
+  const batches = getAvailableBatches('inspection');
+
+  const batchOptions = [
+    { value: '', label: '请选择浸油批次' },
+    ...batches.available.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}`,
+    })),
+    ...batches.blocked.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}（${b.reason}）`,
+      disabled: true,
+    })),
+  ];
 
   const updateDimension = (index: number, field: keyof DimensionItem, value: string | number) => {
     const newDims = [...dimensions];
@@ -58,22 +77,28 @@ export default function Inspection() {
     setSampleQty(20);
     setPassQty(20);
     setInspector('');
+    setPrevImpregnationRecord(null);
+    setLastSavedRecord(null);
+    setShowReworkDialog(false);
+    setReworkTo('sizing');
+    setReworkReason('');
   };
 
   const handleBatchChange = (batchIdVal: string) => {
     setSelectedBatch(batchIdVal);
     if (batchIdVal) {
-      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      const batch = batches.available.find((b) => b.batchId === batchIdVal);
       if (batch) {
         setBatchId(batchIdVal);
         setProductName(batch.productName);
         if (batch.prevRecord) {
-          setDensity(batch.prevRecord.oilContentRate || 6.75);
+          setPrevImpregnationRecord(batch.prevRecord as ImpregnationRecord);
         }
       }
     } else {
       setBatchId('');
       setProductName('');
+      setPrevImpregnationRecord(null);
     }
   };
 
@@ -99,12 +124,31 @@ export default function Inspection() {
       sampleQty,
       passQty,
       overallResult,
+      status: overallResult === 'pass' ? 'completed' : 'failed',
       inspector,
       createdAt: formatDate(new Date()),
     };
 
     addInspection(record);
+    setLastSavedRecord(record);
     setShowForm(false);
+  };
+
+  const handleCreateRework = () => {
+    if (!lastSavedRecord || !reworkReason.trim()) {
+      alert('请填写返工原因');
+      return;
+    }
+
+    createRework(
+      lastSavedRecord.batchId,
+      'inspection',
+      reworkTo,
+      reworkReason,
+      lastSavedRecord.inspector
+    );
+
+    setShowReworkDialog(false);
     resetForm();
   };
 
@@ -174,7 +218,12 @@ export default function Inspection() {
               <Button
                 size="sm"
                 variant={showForm ? 'secondary' : 'primary'}
-                onClick={() => setShowForm(!showForm)}
+                onClick={() => {
+                  setShowForm(!showForm);
+                  if (showForm) {
+                    resetForm();
+                  }
+                }}
               >
                 {showForm ? <X size={14} className="mr-1" /> : <Plus size={14} className="mr-1" />}
                 {showForm ? '取消' : '新增检验'}
@@ -187,17 +236,11 @@ export default function Inspection() {
                   <Select
                     value={selectedBatch}
                     onChange={(e) => handleBatchChange(e.target.value)}
-                    options={[
-                      { value: '', label: '请选择浸油批次' },
-                      ...availableBatches.map((b) => ({
-                        value: b.batchId,
-                        label: `${b.batchId} - ${b.productName}`,
-                      })),
-                    ]}
+                    options={batchOptions}
                   />
                 </FormField>
 
-                {selectedBatch && (
+                {selectedBatch && prevImpregnationRecord && (
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
                     <div className="flex items-center gap-2 text-blue-700 text-xs font-medium mb-2">
                       <Info size={14} />
@@ -206,6 +249,10 @@ export default function Inspection() {
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                       <div>产品名称: <span className="font-medium text-slate-800">{productName}</span></div>
                       <div>批次号: <span className="font-medium text-slate-800 font-mono">{batchId}</span></div>
+                      <div>含油率: <span className="font-medium text-slate-800">{prevImpregnationRecord.oilContentRate}%</span></div>
+                      <div>处理数量: <span className="font-medium text-slate-800">{prevImpregnationRecord.processedQty} 件</span></div>
+                      <div>油品类型: <span className="font-medium text-slate-800">{prevImpregnationRecord.oilType}</span></div>
+                      <div>油温: <span className="font-medium text-slate-800">{prevImpregnationRecord.oilTemperature}°C</span></div>
                     </div>
                   </div>
                 )}
@@ -325,6 +372,26 @@ export default function Inspection() {
                 <p className="text-sm">点击上方按钮新增检验记录</p>
               </div>
             )}
+
+            {lastSavedRecord && lastSavedRecord.overallResult === 'fail' && !showForm && (
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="p-3 bg-red-50 rounded-lg border border-red-100 mb-3">
+                  <div className="flex items-center gap-2 text-red-700 text-xs font-medium mb-1">
+                    <XCircle size={14} />
+                    上一条检验记录不合格
+                  </div>
+                  <p className="text-xs text-red-600">批次: {lastSavedRecord.batchId} - {lastSavedRecord.productName}</p>
+                </div>
+                <Button
+                  variant="danger"
+                  className="w-full"
+                  onClick={() => setShowReworkDialog(true)}
+                >
+                  <RotateCcw size={16} className="mr-2" />
+                  发起返工
+                </Button>
+              </div>
+            )}
           </PageCard>
         </div>
 
@@ -412,6 +479,59 @@ export default function Inspection() {
           </PageCard>
         </div>
       </div>
+
+      {showReworkDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-800">发起返工</h3>
+              <button
+                onClick={() => setShowReworkDialog(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-4">
+              <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                <p className="text-xs text-red-600">
+                  批次: <span className="font-medium">{lastSavedRecord?.batchId}</span> - {lastSavedRecord?.productName}
+                </p>
+              </div>
+
+              <FormField label="返工至" required>
+                <Select
+                  value={reworkTo}
+                  onChange={(e) => setReworkTo(e.target.value as 'sizing' | 'sintering')}
+                  options={[
+                    { value: 'sizing', label: '复压整形' },
+                    { value: 'sintering', label: '高温烧结' },
+                  ]}
+                />
+              </FormField>
+
+              <FormField label="返工原因" required>
+                <textarea
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-colors resize-none"
+                  rows={3}
+                  placeholder="请填写返工原因"
+                  value={reworkReason}
+                  onChange={(e) => setReworkReason(e.target.value)}
+                />
+              </FormField>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+              <Button variant="secondary" onClick={() => setShowReworkDialog(false)}>
+                取消
+              </Button>
+              <Button variant="danger" onClick={handleCreateRework}>
+                <RotateCcw size={16} className="mr-2" />
+                确认返工
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

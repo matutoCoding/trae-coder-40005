@@ -30,7 +30,20 @@ export default function Pressing() {
   const [pressedQty, setPressedQty] = useState(380);
   const [operator, setOperator] = useState('');
 
-  const availableBatches = getAvailableBatches('pressing') as { batchId: string; productName: string; prevRecord: BlendingRecord }[];
+  const batches = getAvailableBatches('pressing') as { available: { batchId: string; productName: string; prevRecord: BlendingRecord }[]; blocked: { batchId: string; productName: string; reason: string; prevRecord: BlendingRecord }[] };
+
+  const batchOptions = [
+    { value: '', label: '请选择混料批次' },
+    ...batches.available.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}`,
+    })),
+    ...batches.blocked.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}（${b.reason}）`,
+      disabled: true,
+    })),
+  ];
 
   const resetForm = () => {
     setSelectedBatch('');
@@ -49,7 +62,7 @@ export default function Pressing() {
   const handleBatchChange = (batchIdVal: string) => {
     setSelectedBatch(batchIdVal);
     if (batchIdVal) {
-      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      const batch = batches.available.find((b) => b.batchId === batchIdVal);
       if (batch) {
         setBatchId(batchIdVal);
         setProductName(batch.productName);
@@ -81,6 +94,7 @@ export default function Pressing() {
       greenHeight,
       pressedQty,
       operator,
+      status: 'completed',
       createdAt: formatDate(new Date()),
     };
 
@@ -144,13 +158,7 @@ export default function Pressing() {
                   <Select
                     value={selectedBatch}
                     onChange={(e) => handleBatchChange(e.target.value)}
-                    options={[
-                      { value: '', label: '请选择混料批次' },
-                      ...availableBatches.map((b) => ({
-                        value: b.batchId,
-                        label: `${b.batchId} - ${b.productName}`,
-                      })),
-                    ]}
+                    options={batchOptions}
                   />
                 </FormField>
 

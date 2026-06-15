@@ -28,7 +28,20 @@ export default function Sizing() {
   const [sizingQty, setSizingQty] = useState(375);
   const [operator, setOperator] = useState('');
 
-  const availableBatches = getAvailableBatches('sizing') as { batchId: string; productName: string; prevRecord: SinteringRecord }[];
+  const batches = getAvailableBatches('sizing') as { available: { batchId: string; productName: string; prevRecord: SinteringRecord }[]; blocked: { batchId: string; productName: string; reason: string; prevRecord: SinteringRecord }[] };
+
+  const batchOptions = [
+    { value: '', label: '请选择烧结批次' },
+    ...batches.available.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}`,
+    })),
+    ...batches.blocked.map((b) => ({
+      value: b.batchId,
+      label: `${b.batchId} - ${b.productName}（${b.reason}）`,
+      disabled: true,
+    })),
+  ];
 
   const sizingAmount = parseFloat(Math.abs(afterSizingSize - afterSinterSize).toFixed(3));
 
@@ -48,7 +61,7 @@ export default function Sizing() {
   const handleBatchChange = (batchIdVal: string) => {
     setSelectedBatch(batchIdVal);
     if (batchIdVal) {
-      const batch = availableBatches.find((b) => b.batchId === batchIdVal);
+      const batch = batches.available.find((b) => b.batchId === batchIdVal);
       if (batch) {
         setBatchId(batchIdVal);
         setProductName(batch.productName);
@@ -77,6 +90,7 @@ export default function Sizing() {
       sizingAmount,
       sizingQty,
       operator,
+      status: 'completed',
       createdAt: formatDate(new Date()),
     };
 
@@ -135,13 +149,7 @@ export default function Sizing() {
                   <Select
                     value={selectedBatch}
                     onChange={(e) => handleBatchChange(e.target.value)}
-                    options={[
-                      { value: '', label: '请选择烧结批次' },
-                      ...availableBatches.map((b) => ({
-                        value: b.batchId,
-                        label: `${b.batchId} - ${b.productName}`,
-                      })),
-                    ]}
+                    options={batchOptions}
                   />
                 </FormField>
 
